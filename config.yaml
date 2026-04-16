@@ -1,0 +1,32 @@
+# DLP Classifier — cấu hình mặc định
+
+scanner:
+  workers: 0           # 0 = tự động (GOMAXPROCS × 4)
+  max_file_size: "50MB"
+  batch_size: 2000000
+  mmap_threshold: "1MB"
+  skip_dirs:
+    - .git
+    - node_modules
+    - __pycache__
+    - .terraform
+
+rules:
+  dir: "./rules"
+  min_confidence: 0.60
+  context_window: 200
+  compound_boost: 0.15
+
+output:
+  default_format: "stdout"
+  audit_log: ""
+  audit_rotation_size: "100MB"
+  audit_rotation_interval: "24h"
+
+agent:
+  socket_path: "/tmp/dlp.sock"
+  grpc_addr: ":50051"
+
+scoring:
+  entropy_threshold: 4.5
+  luhn_required_for_cards: true

@@ -1,0 +1,71 @@
+# ORG-003 + Org Contract — Tài liệu hợp đồng / thỏa thuận bảo mật + Mã hợp đồng/PO
+# Kết hợp 2 loại phát hiện trong 1 rule:
+#   1. Keyword-based: nhận dạng tài liệu hợp đồng qua từ khóa
+#   2. Pattern-based: nhận dạng mã số hợp đồng / Purchase Order (ORG-003)
+
+id: contract_001
+name: "ORG-003 Mã số hợp đồng / PO"
+category: org
+level: INTERNAL
+weight: 0.78
+priority: 60
+tags: [org, contract, nda, agreement, purchase_order]
+enabled: true
+
+patterns:
+  - regex: '(?i)\b(?:HĐ|HD|PO|CONTRACT|CTR)[/\-]?\s*\d{4,12}(?:[/\-][A-Z0-9]+)*\b'
+    description: "ORG-003 theo spec PDF"
+    confidence: 0.90
+    context_required: false
+
+keywords:
+  primary:
+    - "hợp đồng"
+    - "contract"
+    - "agreement"
+    - "thỏa thuận"
+    - "NDA"
+    - "non-disclosure"
+    - "thoả thuận bảo mật"
+    - "hợp đồng dịch vụ"
+    - "hợp đồng mua bán"
+  secondary:
+    - "bảo mật"
+    - "confidential"
+    - "cam kết"
+    - "điều khoản"
+    - "terms"
+    - "conditions"
+    - "phụ lục"
+    - "annex"
+    - "appendix"
+    - "hiệu lực"
+    - "effective date"
+    - "chấm dứt"
+    - "termination"
+    - "vi phạm"
+    - "breach"
+    - "bồi thường"
+    - "penalty"
+    - "nghĩa vụ"
+    - "obligation"
+    - "quyền và nghĩa vụ"
+    - "purchase order"
+    - "đơn đặt hàng"
+    - "báo giá"
+    - "quotation"
+
+keyword_logic:
+  min_primary: 1
+  min_secondary: 0
+  confidence_per_keyword: 0.08
+  max_confidence: 0.92
+
+escalation:
+  keywords:
+    - "quốc phòng"
+    - "an ninh quốc gia"
+    - "tối mật"
+    - "mật"
+    - "bí mật nhà nước"
+  escalate_to: SECRET

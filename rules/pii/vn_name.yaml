@@ -1,0 +1,67 @@
+# PII-005 — Họ tên người Việt Nam
+# Phát hiện dựa trên danh sách họ phổ biến nhất (top 35 họ VN, chiếm ~98% dân số).
+# Pattern yêu cầu đúng cấu trúc: [Họ] [Tên đệm]* [Tên] (2-4 từ)
+#
+# Nguồn: Tổng điều tra dân số 2019 — Tổng cục Thống kê.
+# Họ phổ biến nhất: Nguyễn (~40%), Trần (~12%), Lê (~10%), Phạm (~7%), ...
+#
+# FP risk: tên riêng nước ngoài có thể khớp pattern (vd: "Lê Pen" → Lê + 1 từ).
+# Giảm thiểu: confidence thấp + bắt buộc keyword ngữ cảnh.
+#
+# Lưu ý kỹ thuật: Dùng \p{Lu}\p{L}+ cho Unicode Vietnamese (thay vì [A-ZÀÁÂ..]).
+# RE2 của Go hỗ trợ \p{Lu} (uppercase letter) và \p{L} (any letter).
+
+id: vn_name_001
+name: "Họ tên người Việt Nam"
+category: pii
+level: INTERNAL
+weight: 0.65
+priority: 30
+tags: [pii, personal_name, pii_name, vn_specific]
+enabled: true
+
+patterns:
+  # Họ tên đầy đủ: [Họ phổ biến] + [1-3 tên đệm/tên] viết hoa chữ đầu
+  # \p{Lu} = uppercase Unicode letter, \p{L} = any Unicode letter
+  - regex: '(?:Nguyễn|Trần|Lê|Phạm|Hoàng|Huỳnh|Phan|Vũ|Võ|Đặng|Bùi|Đỗ|Hồ|Ngô|Dương|Lý|Đinh|Trịnh|Đoàn|Lưu|Vương|Cao|Mai|Tô|Châu|Hà|Tăng|Thái|Lâm|Đào|Quách|La|Kiều|Trương|Tiền|Lưu|Linh|Văn|Thị|Ngọc)\s+\p{Lu}\p{L}+(?:\s+\p{Lu}\p{L}+){1,3}'
+    description: "Họ tên người Việt (họ phổ biến + tên đệm + tên)"
+    confidence: 0.75
+    context_required: true
+
+  # Pattern đặc biệt: "Họ và tên: Nguyễn Văn A" — label rõ ràng
+  - regex: '(?i)(?:họ\s*(?:và\s*)?tên|tên\s*khách\s*hàng|full\s*name|tên\s*người\s*dùng|chủ\s*tài\s*khoản)\s*[:]\s*(?:Nguyễn|Trần|Lê|Phạm|Hoàng|Huỳnh|Phan|Vũ|Võ|Đặng|Bùi|Đỗ|Hồ|Ngô|Dương|Lý|Đinh|Trịnh|Đoàn)\s+\p{Lu}\p{L}+(?:\s+\p{Lu}\p{L}+)*'
+    description: "Họ tên sau label rõ ràng (họ và tên:, tên KH:, ...)"
+    confidence: 0.90
+    context_required: false
+
+keywords:
+  primary:
+    - "họ tên"
+    - "họ và tên"
+    - "tên khách hàng"
+    - "full name"
+    - "tên người dùng"
+    - "tên nhân viên"
+    - "chủ tài khoản"
+    - "người đại diện"
+    - "tên chủ thẻ"
+  secondary:
+    - "khách hàng"
+    - "người dùng"
+    - "nhân viên"
+    - "hành khách"
+    - "bệnh nhân"
+    - "học sinh"
+    - "sinh viên"
+    - "ký tên"
+    - "chữ ký"
+
+keyword_logic:
+  min_primary: 1
+  min_secondary: 0
+  confidence_per_keyword: 0.08
+  max_confidence: 0.92
+
+false_positive_reduction:
+  exclude_if_no_keywords: true
+  min_context_window: 100

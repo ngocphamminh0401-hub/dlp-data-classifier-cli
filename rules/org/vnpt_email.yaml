@@ -1,0 +1,50 @@
+# ORG-002 — Email domain nội bộ VNPT (org category)
+# Rule này supplement email_001 (category: pii) để tạo tín hiệu org riêng.
+# Khi email VNPT xuất hiện → tín hiệu "org" → compound rule [org + pii] có thể trigger.
+#
+# Khác với email_001 (phát hiện email chung, category=pii):
+#   Rule này dùng category=org, cho phép compound rule nhận biết
+#   tài liệu "có liên quan đến tổ chức VNPT" dù không phải toàn bộ là PII.
+#
+# Các domain VNPT (cập nhật theo cơ cấu tổ chức 2024):
+#   vnpt.vn          — Tập đoàn VNPT (chính)
+#   vnpt-i.vn        — VNPT-I (công nghệ thông tin)
+#   vnptit.vn        — VNPT IT
+#   vinaphone.vn     — VinaPhone (di động)
+#   vnpttechnology.vn — VNPT Technology
+#   vnpt-net.vn      — VNPT Net
+#   vnptmedia.vn     — VNPT Media
+
+id: vnpt_email_001
+name: "Email domain nội bộ VNPT (tín hiệu tổ chức)"
+category: org
+level: INTERNAL
+weight: 0.80
+priority: 42
+tags: [org, vnpt_email, internal_email, org_identifier]
+enabled: true
+
+patterns:
+  - regex: '\b[A-Za-z0-9._%+\-]+@(?:vnpt\.vn|vnpt-i\.vn|vnptit\.vn|vinaphone\.vn|vnpttechnology\.vn)\b'
+    description: "ORG-002 theo spec PDF"
+    confidence: 0.95
+    context_required: false
+
+keywords:
+  primary:
+    - "VNPT"
+    - "@vnpt.vn"
+    - "@vnpt-i.vn"
+    - "@vinaphone.vn"
+    - "email nội bộ"
+  secondary:
+    - "nhân viên VNPT"
+    - "cán bộ VNPT"
+    - "nội bộ VNPT"
+    - "tập đoàn VNPT"
+    - "VinaPhone"
+    - "VNPT-I"
+
+false_positive_reduction:
+  min_context_window: 0
+  exclude_if_no_keywords: false

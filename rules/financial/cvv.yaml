@@ -1,0 +1,66 @@
+# FIN-004 — CVV / CVC / CSC (Card Verification Value)
+# PCI-DSS v4.0 Req. 3.3.1 — CVV/CVC/CID KHÔNG ĐƯỢC lưu trữ sau authorization.
+# Sự có mặt của CVV trong file → vi phạm PCI-DSS nghiêm trọng.
+#
+# CVV là 3 chữ số (Visa, Mastercard, Discover, Napas)
+# CID là 4 chữ số (American Express — in nổi mặt trước thẻ)
+#
+# Chiến lược phát hiện:
+# CVV 3-4 số đơn lẻ có quá nhiều FP → PHẢI có label "CVV:", "CVC:", v.v. ngay trước.
+# Pattern nhúng label vào regex để không cần keyword context riêng biệt.
+
+id: cvv_001
+name: "CVV / CVC / CSC (mã bảo mật thẻ)"
+category: financial
+level: SECRET
+weight: 0.97
+priority: 98
+tags: [financial, cvv, cvc, csc, pci_dss, card_data]
+enabled: true
+
+patterns:
+  # CVV/CVC/CVV2/CVC2/CSC: label + 3-4 số
+  # Ví dụ: CVV: 123, CVC2=456, CSC: 7890
+  - regex: '(?i)(?:CVV2?|CVC2?|CSC|card\s*security\s*code|card\s*verification)\s*[:=\-]?\s*\b\d{3,4}\b'
+    description: "CVV/CVC/CSC label + 3-4 chữ số (PCI-DSS sensitive)"
+    confidence: 0.97
+    context_required: false
+
+  # iCVV (thẻ chip) — phát hiện trong file log / dump dữ liệu
+  - regex: '(?i)(?:icvv|dynamic\s*cvv|dCVV)\s*[:=\-]?\s*\b\d{3,4}\b'
+    description: "iCVV / Dynamic CVV (thẻ chip)"
+    confidence: 0.95
+    context_required: false
+
+  # CVV trong context thẻ đầy đủ (cạnh số thẻ + ngày hết hạn)
+  # Detect CVV 3-4 số xuất hiện cùng format "MM/YY" hoặc "MM/YYYY"
+  # Không standalone — cần regex engine check proximity (xử lý bởi compound + context boost)
+  - regex: '\b\d{3,4}\b'
+    description: "CVV 3-4 chữ số — chỉ dùng kết hợp với context số thẻ"
+    confidence: 0.55
+    context_required: true
+
+keywords:
+  primary:
+    - "CVV"
+    - "CVC"
+    - "CVV2"
+    - "CVC2"
+    - "CSC"
+    - "card security code"
+    - "mã bảo mật"
+    - "security code"
+  secondary:
+    - "thẻ tín dụng"
+    - "credit card"
+    - "debit card"
+    - "thẻ ghi nợ"
+    - "CID"
+    - "card verification"
+    - "3-digit"
+    - "4-digit"
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false
+  # Pattern đã nhúng label → không cần keyword riêng cho 2 pattern đầu

@@ -1,0 +1,58 @@
+# FIN-005 — Số IBAN quốc tế (International Bank Account Number)
+# Theo tiêu chuẩn ISO 13616. Việt Nam chưa áp dụng IBAN nhưng xuất hiện
+# trong các giao dịch quốc tế, hợp đồng nước ngoài, hồ sơ đối tác.
+#
+# CẤU TRÚC IBAN:
+#   [2 chữ cái quốc gia] + [2 chữ số kiểm tra] + [BBAN] (tối đa 30 ký tự)
+#   Tổng: 15-34 ký tự
+#
+# VÍ DỤ:
+#   GB82 WEST 1234 5698 7654 32  (Anh — 22 ký tự)
+#   DE89 3704 0044 0532 0130 00  (Đức — 22 ký tự)
+#   FR76 3000 6000 0112 3456 7890 189 (Pháp — 27 ký tự)
+
+id: iban_001
+name: "Số tài khoản IBAN quốc tế"
+category: financial
+level: CONFIDENTIAL
+weight: 0.83
+priority: 58
+tags: [financial, iban, international_banking, account_number]
+enabled: true
+
+patterns:
+  # IBAN đầy đủ (liền) — [CC][2 số][tối đa 30 alphanum]
+  - regex: '\b[A-Z]{2}\d{2}[A-Z0-9]{4}\d{7}(?:[A-Z0-9]{0,16})?\b'
+    description: "IBAN dạng liền (không có khoảng cách)"
+    confidence: 0.85
+    context_required: true
+
+  # IBAN dạng nhóm 4 ký tự (định dạng đọc cho người)
+  # Vd: GB82 WEST 1234 5698 7654 32
+  - regex: '\b[A-Z]{2}\d{2}(?:\s[A-Z0-9]{4}){2,7}\b'
+    description: "IBAN dạng nhóm 4 ký tự (định dạng đọc)"
+    confidence: 0.88
+    context_required: true
+
+keywords:
+  primary:
+    - "IBAN"
+    - "international bank account"
+    - "account number"
+    - "BBAN"
+  secondary:
+    - "chuyển tiền quốc tế"
+    - "international transfer"
+    - "wire transfer"
+    - "ngân hàng nước ngoài"
+    - "foreign bank"
+    - "correspondent"
+    - "EUR"
+    - "USD"
+    - "GBP"
+    - "swift"
+    - "BIC"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true

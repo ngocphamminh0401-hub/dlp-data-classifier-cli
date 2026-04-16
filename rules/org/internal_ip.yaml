@@ -1,0 +1,75 @@
+# ORG-004 — Địa chỉ IP nội bộ (RFC 1918 private address space)
+# Phát hiện IP nội bộ trong file cấu hình, log, source code, tài liệu kỹ thuật.
+# Sự rò rỉ IP nội bộ giúp attacker lập bản đồ mạng nội bộ (network reconnaissance).
+#
+# RFC 1918 PRIVATE RANGES:
+#   10.0.0.0/8        — Class A: 10.x.x.x
+#   172.16.0.0/12     — Class B: 172.16.x.x đến 172.31.x.x
+#   192.168.0.0/16    — Class C: 192.168.x.x (phổ biến nhất)
+#
+# RFC 5735 SPECIAL RANGES:
+#   169.254.0.0/16    — Link-local (APIPA)
+#   127.0.0.0/8       — Loopback (ít nguy hiểm hơn)
+#
+# Không phải mọi IP nội bộ đều nhạy cảm — context quyết định cấp độ.
+# IP + username/password → SECRET; IP đơn lẻ → INTERNAL.
+
+id: internal_ip_001
+name: "ORG-004 Địa chỉ IP nội bộ (Private)"
+category: org
+level: INTERNAL
+weight: 0.75
+priority: 50
+tags: [org, internal_ip, network, infrastructure, rfc1918]
+enabled: true
+
+patterns:
+  - regex: '\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b'
+    description: "ORG-004 theo spec PDF"
+    confidence: 0.88
+    context_required: false
+
+keywords:
+  primary:
+    - "địa chỉ IP"
+    - "IP address"
+    - "gateway"
+    - "subnet"
+    - "server"
+    - "firewall"
+    - "router"
+  secondary:
+    - "mạng nội bộ"
+    - "internal network"
+    - "LAN"
+    - "WAN"
+    - "VPN"
+    - "DNS"
+    - "DHCP"
+    - "host"
+    - "endpoint"
+    - "network diagram"
+    - "sơ đồ mạng"
+    - "topology"
+    - "database"
+    - "server IP"
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false
+  # IP nội bộ tự nhận dạng qua range — không cần keyword bắt buộc
+
+escalation:
+  keywords:
+    - "password"
+    - "passwd"
+    - "mật khẩu"
+    - "credentials"
+    - "username"
+    - "login"
+    - "admin"
+    - "root"
+    - "ssh"
+    - "rdp"
+    - "telnet"
+  escalate_to: CONFIDENTIAL

@@ -1,0 +1,1 @@
+﻿PUBLIC clean case NEG-032: release notes, sprint planning, inventory metrics, no sensitive data

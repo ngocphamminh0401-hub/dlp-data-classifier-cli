@@ -1,0 +1,74 @@
+# PII — Ngày tháng năm sinh (Date of Birth)
+# Theo Nghị định 13/2023/NĐ-CP: ngày sinh là dữ liệu cá nhân cần bảo vệ.
+#
+# FP risk rất cao (mọi ngày tháng đều khớp pattern này).
+# Yêu cầu bắt buộc: TỐI THIỂU 1 keyword ngữ cảnh HOẶC kết hợp với PII khác.
+# Ngưỡng confidence thấp hơn các rule khác — chủ yếu dùng để kết hợp compound rule.
+
+id: dob_001
+name: "Ngày tháng năm sinh"
+category: pii
+level: INTERNAL
+weight: 0.60
+priority: 35
+tags: [pii, date_of_birth, pii_dob, temporal]
+enabled: true
+
+patterns:
+  # DD/MM/YYYY — định dạng Việt Nam phổ biến nhất
+  - regex: '\b(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.]\d{4}\b'
+    description: "DD/MM/YYYY hoặc D/M/YYYY (định dạng Việt Nam)"
+    confidence: 0.65
+    context_required: true
+
+  # YYYY-MM-DD — ISO 8601, dùng trong hệ thống / database
+  - regex: '\b\d{4}[/\-.](?:0[1-9]|1[0-2])[/\-.](?:0[1-9]|[12]\d|3[01])\b'
+    description: "YYYY-MM-DD (ISO 8601 — dùng trong database, API)"
+    confidence: 0.70
+    context_required: true
+
+  # MM/DD/YYYY — định dạng Mỹ (thường gặp trong tài liệu quốc tế)
+  - regex: '\b(?:0?[1-9]|1[0-2])[/\-](?:0?[1-9]|[12]\d|3[01])[/\-]\d{4}\b'
+    description: "MM/DD/YYYY (định dạng Mỹ)"
+    confidence: 0.60
+    context_required: true
+
+  # Ngày sinh dạng chữ: 15 tháng 03 năm 1990
+  - regex: '\b(?:0?[1-9]|[12]\d|3[01])\s+tháng\s+(?:0?[1-9]|1[0-2])\s+năm\s+(?:19|20)\d{2}\b'
+    description: "Ngày sinh dạng chữ Tiếng Việt (D tháng M năm YYYY)"
+    confidence: 0.88
+    context_required: false
+
+  # Năm sinh riêng biệt kết hợp keyword — low confidence, hỗ trợ compound
+  - regex: '\b(?:19[0-9]{2}|20[0-2]\d)\b'
+    description: "Năm sinh (1900-2029) — chỉ dùng với keyword ngữ cảnh"
+    confidence: 0.45
+    context_required: true
+
+keywords:
+  primary:
+    - "ngày sinh"
+    - "năm sinh"
+    - "DOB"
+    - "date of birth"
+    - "sinh ngày"
+    - "birthdate"
+    - "birthday"
+    - "ngày tháng năm sinh"
+    - "sinh năm"
+    - "ngày sinh:"
+    - "năm sinh:"
+  secondary:
+    - "tuổi"
+    - "age"
+    - "born"
+    - "sinh ra"
+    - "khai sinh"
+    - "giấy khai sinh"
+    - "birth certificate"
+    - "ngày sinh nhật"
+    - "hồ sơ"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true

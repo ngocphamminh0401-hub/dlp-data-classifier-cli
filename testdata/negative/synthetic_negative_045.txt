@@ -1,0 +1,1 @@
+﻿PUBLIC clean case NEG-045: developer handbook and architecture notes

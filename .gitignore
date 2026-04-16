@@ -1,0 +1,36 @@
+# Go binaries
+/dlp
+/dlp.exe
+*.exe
+*.out
+
+# Build output
+/bin/
+/dist/
+
+# Go test cache
+*.test
+*.bench
+
+# Output / scan results (generated files)
+scan-result.jsonl
+*.jsonl
+
+# Config với thông tin nhạy cảm (nếu có)
+config.local.yaml
+*.local.yaml
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependency vendor (nếu không dùng vendor mode)
+# vendor/

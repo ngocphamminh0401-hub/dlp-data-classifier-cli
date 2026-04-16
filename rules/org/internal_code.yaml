@@ -1,0 +1,66 @@
+# ORG — Mã nội bộ VNPT + Nhãn phân loại nội bộ
+# Phát hiện mã định danh nội bộ của VNPT và các đơn vị thành viên.
+# Cấp độ INTERNAL — thông tin nội bộ tổ chức, không dành cho bên ngoài.
+
+id: internal_code_001
+name: "Mã nội bộ và nhãn phân loại VNPT"
+category: org
+level: INTERNAL
+weight: 0.70
+priority: 40
+tags: [org, internal_code, vnpt_specific, identifier]
+enabled: true
+
+patterns:
+  # Mã dự án VNPT: VNPT-XX-NNNNNNN (2-4 chữ cái + 4-8 số)
+  - regex: '\bVNPT-[A-Z]{2,4}-\d{4,8}\b'
+    description: "Mã dự án VNPT (VNPT-XX-NNNNNNN)"
+    confidence: 0.95
+    context_required: false
+
+  # Project code nội bộ: PRJ-NNNNNN
+  - regex: '\bPRJ-\d{6}\b'
+    description: "Project code nội bộ (PRJ-NNNNNN)"
+    confidence: 0.90
+    context_required: false
+
+  # Mã đơn vị VNPT (MĐV) — dạng số
+  - regex: '\b(?:MĐV|MDV|ORG)[-_]?\d{4,8}\b'
+    description: "Mã đơn vị VNPT (MĐV-NNNN)"
+    confidence: 0.88
+    context_required: false
+
+  # Mã nhân viên VNPT
+  - regex: '\b(?:NV|MSNV|EMP)[-_]?\d{4,8}\b'
+    description: "Mã nhân viên VNPT (NV-NNNN hoặc MSNV-NNNN)"
+    confidence: 0.85
+    context_required: true
+
+  # Ticket / Incident code nội bộ
+  - regex: '\b(?:INC|CHG|PRB|REQ|TKT)[-#]\d{6,10}\b'
+    description: "Mã ticket/incident VNPT (INC-xxxxxx, CHG-xxxxxx)"
+    confidence: 0.87
+    context_required: false
+
+keywords:
+  primary:
+    - "nội bộ"
+    - "internal"
+    - "restricted"
+    - "chỉ lưu hành nội bộ"
+    - "for internal use only"
+    - "không phổ biến"
+    - "VNPT"
+    - "mã dự án"
+    - "project code"
+  secondary:
+    - "phòng ban"
+    - "đơn vị"
+    - "nhân viên"
+    - "employee"
+    - "internal only"
+    - "nội bộ VNPT"
+    - "hệ thống nội bộ"
+    - "ticket"
+    - "incident"
+    - "change request"

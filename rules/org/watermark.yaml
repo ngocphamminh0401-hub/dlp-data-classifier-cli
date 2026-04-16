@@ -1,0 +1,41 @@
+# ORG-006 — Watermark nội bộ / Nhãn lưu hành hạn chế
+# Phát hiện nhãn watermark văn bản chỉ ra tài liệu chỉ dùng nội bộ.
+# Thường xuất hiện ở: header/footer văn bản, background watermark PDF,
+# tiêu đề slide PowerPoint, ghi chú trong email.
+#
+# Strategy: Pattern match toàn cụm từ (multi-word), không match từng từ riêng lẻ.
+# Vd: "nội bộ" riêng lẻ quá chung chung → "chỉ lưu hành nội bộ" mới đặc trưng.
+
+id: watermark_001
+name: "Watermark nội bộ / nhãn lưu hành hạn chế"
+category: org
+level: INTERNAL
+weight: 0.85
+priority: 45
+tags: [org, watermark, internal_label, distribution_control]
+enabled: true
+
+patterns:
+  - regex: '(?i)(?:chỉ\s*lưu\s*hành\s*nội\s*bộ|internal\s*use\s*only|không\s*phát\s*hành\s*ra\s*ngoài|do\s*not\s*distribute|for\s*internal\s*use)'
+    description: "ORG-006 theo spec PDF"
+    confidence: 0.93
+    context_required: false
+
+keywords:
+  primary:
+    - "nội bộ"
+    - "internal"
+    - "lưu hành nội bộ"
+    - "internal use only"
+    - "chỉ lưu hành nội bộ"
+    - "không phổ biến"
+    - "do not distribute"
+  secondary:
+    - "confidential"
+    - "bảo mật"
+    - "restricted"
+    - "hạn chế"
+    - "phát hành"
+    - "circulation"
+    - "VNPT"
+    - "tài liệu"

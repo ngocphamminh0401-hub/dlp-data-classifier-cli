@@ -1,0 +1,83 @@
+# PII-003 — Số điện thoại Việt Nam
+# Theo quy hoạch số của Bộ TT&TT (Thông tư 11/2013 và cập nhật 2018).
+#
+# Đầu số di động hợp lệ (từ 2018):
+#   Viettel:    032-039, 086, 096, 097, 098
+#   Mobifone:   070, 076, 077, 078, 079, 089, 090, 093
+#   Vinaphone:  081, 082, 083, 084, 085, 088, 091, 094
+#   Vietnamobile: 052, 056, 058, 092
+#   Gmobile:    059, 099
+#   Reddi:      055, 099
+#
+# Đầu số cố định: 02x (10 chữ số sau 2018)
+# Quốc tế: +84 hoặc 0084 + phần không có số 0 đầu
+
+id: phone_001
+name: "Số điện thoại Việt Nam"
+category: pii
+level: CONFIDENTIAL
+weight: 0.75
+priority: 55
+tags: [pii, phone, contact_info, vn_specific]
+enabled: true
+
+patterns:
+  # Di động VN — dạng 0xxx (10 chữ số) — tất cả đầu số hợp lệ
+  # Nhóm [235789] là số thứ 2 sau 0 để lọc đúng nhà mạng
+  - regex: '\b0(?:3[2-9]|5[2-9]|7[06-9]|8[0-9]|9[0-9])\d{7}\b'
+    description: "Số di động VN dạng 0xxx — tất cả đầu số hợp lệ (2018+)"
+    confidence: 0.90
+    context_required: false
+
+  # Di động VN — dạng quốc tế +84 (không có số 0 đầu)
+  - regex: '\+84(?:3[2-9]|5[2-9]|7[06-9]|8[0-9]|9[0-9])\d{7}\b'
+    description: "Số di động VN dạng +84xxx (quốc tế)"
+    confidence: 0.92
+    context_required: false
+
+  # Di động VN — dạng quốc tế 84 (không có dấu + và không có 0)
+  - regex: '\b84(?:3[2-9]|5[2-9]|7[06-9]|8[0-9]|9[0-9])\d{7}\b'
+    description: "Số di động VN dạng 84xxx (không có dấu +)"
+    confidence: 0.88
+    context_required: false
+
+  # Số cố định VN — 02x + 8 chữ số = 10 tổng (từ 2018)
+  - regex: '\b02[0-9]\d{8}\b'
+    description: "Số điện thoại cố định VN dạng 02x (10 chữ số)"
+    confidence: 0.80
+    context_required: true
+
+  # Hotline 4 số (1800, 1900) — thường là số tổng đài
+  - regex: '\b1(?:800|900)\d{4,6}\b'
+    description: "Số tổng đài 1800/1900 VN"
+    confidence: 0.70
+    context_required: true
+
+keywords:
+  primary:
+    - "điện thoại"
+    - "SĐT"
+    - "số máy"
+    - "số điện thoại"
+    - "di động"
+    - "mobile"
+    - "phone"
+    - "tel"
+    - "liên lạc"
+    - "liên hệ"
+  secondary:
+    - "hotline"
+    - "zalo"
+    - "fax"
+    - "ext"
+    - "số máy lẻ"
+    - "số nội bộ"
+    - "cell"
+    - "contact"
+    - "gọi"
+
+false_positive_reduction:
+  min_context_window: 100
+  # Không yêu cầu keyword cho di động (đầu số đã đặc trưng)
+  # Nhưng cần keyword cho số cố định (02x dễ nhầm với mã số khác)
+  exclude_if_no_keywords: false

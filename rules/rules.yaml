@@ -1,0 +1,117 @@
+# Master rule index — DLP Classifier
+# Thứ tự load ảnh hưởng đến priority fallback khi hai rule cùng priority bằng nhau.
+# Rule có priority cao (credit_card=100, credentials=97) được engine sort lên trước.
+#
+# TỔNG KẾT:
+#   PII      — 6 rules (vn_id, passport, phone, email, dob, vn_name)
+#   Financial— 7 rules (credit_card, bank_account, tax_code, swift_bic, cvv, iban, income)
+#   Org      — 7 rules (classified_doc, contract, internal_code, internal_ip, credentials, watermark, vnpt_email)
+#   TỔNG     — 20 rules
+
+includes:
+  # ── PII (Thông tin cá nhân — Nghị định 13/2023/NĐ-CP) ─────────────────────
+  # priority: 80 → scan trước email/dob (nhận dạng danh tính cụ thể)
+  - pii/vn_id.yaml
+
+  # priority: 78 → hộ chiếu (ít phổ biến hơn CCCD nhưng vẫn quan trọng)
+  - pii/passport.yaml
+
+  # priority: 55 → số điện thoại (đặc trưng nhưng ít nguy hiểm hơn danh tính)
+  - pii/phone.yaml
+
+  # priority: 45 → email (low-risk, cần cho compound rule pii+financial)
+  - pii/email.yaml
+
+  # priority: 35 → ngày sinh (low confidence, hỗ trợ compound rule)
+  - pii/dob.yaml
+
+  # priority: 30 → họ tên (context-heavy, confidence thấp nhất trong PII)
+  - pii/vn_name.yaml
+
+  # ── Financial (PCI-DSS + NHNN) ─────────────────────────────────────────────
+  # priority: 100 → credit card (SECRET + Luhn) — fast-fail candidate số 1
+  - financial/credit_card.yaml
+
+  # priority: 98 → CVV (SECRET, vi phạm PCI-DSS nghiêm trọng nhất)
+  - financial/cvv.yaml
+
+  # priority: 70 → số tài khoản NH (CONFIDENTIAL, cần keyword)
+  - financial/bank_account.yaml
+
+  # priority: 65 → SWIFT/BIC (CONFIDENTIAL, giao dịch quốc tế)
+  - financial/swift_bic.yaml
+
+  # priority: 60 → mã số thuế (CONFIDENTIAL, cần keyword)
+  - financial/tax_code.yaml
+
+  # priority: 58 → IBAN (CONFIDENTIAL, giao dịch quốc tế)
+  - financial/iban.yaml
+
+  # priority: 52 → lương/thu nhập (CONFIDENTIAL, context-heavy)
+  - financial/income.yaml
+
+  # ── Org (Tài liệu và hạ tầng tổ chức) ────────────────────────────────────
+  # priority: 97 → credentials (SECRET — fast-fail candidate số 2)
+  - org/credentials.yaml
+
+  # priority: 95 → tài liệu mật (SECRET — nhãn phân loại chính thức)
+  - org/classified_doc.yaml
+
+  # priority: 60 → hợp đồng + mã PO (CONFIDENTIAL)
+  - org/contract.yaml
+
+  # priority: 50 → IP nội bộ (INTERNAL, nâng CONFIDENTIAL nếu có credentials)
+  - org/internal_ip.yaml
+
+  # priority: 45 → watermark nội bộ (INTERNAL)
+  - org/watermark.yaml
+
+  # priority: 42 → email domain VNPT (INTERNAL, tín hiệu org cho compound rule)
+  - org/vnpt_email.yaml
+
+  # priority: 40 → mã nội bộ VNPT (INTERNAL)
+  - org/internal_code.yaml
+
+# ── Compound rules ─────────────────────────────────────────────────────────
+# Kết hợp nhiều category → nâng cấp độ phân loại.
+# Conditions khớp với: category, rule ID prefix, tags đã khai báo.
+compound_rules:
+  # [PII + Financial] → bộ dữ liệu đủ để đánh cắp danh tính + tài khoản
+  - name: "PII + Financial = SECRET"
+    conditions: [pii, financial]
+    result_level: SECRET
+
+  # [Hợp đồng + bất kỳ PII] → tài liệu hợp đồng có thông tin cá nhân
+  - name: "Contract + PII = CONFIDENTIAL"
+    conditions: [org, pii]
+    result_level: CONFIDENTIAL
+
+  # [CCCD + Số TK + SĐT] → bộ 3 yếu tố đủ để mở tài khoản gian lận
+  - name: "Full identity set (CCCD + phone + bank) = SECRET"
+    conditions: [pii_vn_id, pii_phone, financial]
+    result_level: SECRET
+
+  # [CCCD + Ngày sinh + Họ tên] → bộ PII cá nhân đầy đủ
+  - name: "Full PII set (CCCD + DOB + Name) = SECRET"
+    conditions: [pii_vn_id, pii_dob, pii_name]
+    result_level: SECRET
+
+  # [Credit card + CVV] → dữ liệu thẻ đầy đủ (PCI-DSS violation nghiêm trọng)
+  - name: "Credit card + CVV = SECRET (PCI-DSS)"
+    conditions: [credit_card, cvv]
+    result_level: SECRET
+
+  # [Credentials + IP nội bộ] → thông tin đủ để xâm nhập hệ thống nội bộ
+  - name: "Credentials + Internal IP = SECRET"
+    conditions: [credentials, internal_ip]
+    result_level: SECRET
+
+  # [Hợp đồng + Financial] → hợp đồng tài chính
+  - name: "Contract + Financial = CONFIDENTIAL"
+    conditions: [org, financial]
+    result_level: CONFIDENTIAL
+
+  # [Email VNPT + Tài liệu mật] → tài liệu mật của VNPT
+  - name: "VNPT email + Classified doc = SECRET"
+    conditions: [vnpt_email, classified_doc]
+    result_level: SECRET

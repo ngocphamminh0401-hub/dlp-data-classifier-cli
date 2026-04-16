@@ -1,0 +1,86 @@
+syntax = "proto3";
+package scanner;
+option go_package = "github.com/vnpt/dlp-classifier/proto";
+
+// ScannerService exposes the DLP engine over gRPC.
+//
+// Unary:           ScanFile      — scan một file đơn, trả về một ScanResponse.
+// Server-streaming: ScanDirectory — scan toàn bộ thư mục, stream từng ScanResponse.
+// Unary:           Ping          — kiểm tra liveness, trả về version.
+// Unary:           GetStatus     — lấy thống kê runtime của agent.
+service ScannerService {
+  rpc ScanFile      (ScanRequest)   returns (ScanResponse);
+  rpc ScanDirectory (ScanRequest)   returns (stream ScanResponse);
+  rpc Ping          (PingRequest)   returns (PingResponse);
+  rpc GetStatus     (StatusRequest) returns (AgentStatus);
+}
+
+// ─── Scan messages ───────────────────────────────────────────────────────────
+
+// ScanRequest là yêu cầu scan gửi từ client.
+message ScanRequest {
+  string path           = 1; // Đường dẫn file hoặc thư mục
+  string format         = 2; // Định dạng output (để tương thích; agent luôn trả JSON)
+  double min_confidence = 3; // Ngưỡng confidence tối thiểu (0.0–1.0)
+  bool   recursive      = 4; // Duyệt đệ quy thư mục con (ScanDirectory)
+  string rules_dir      = 5; // Override thư mục rules của server
+  int64  max_file_size_mb = 6; // Giới hạn kích thước file (MB), 0 = dùng mặc định
+}
+
+// ScanResponse là kết quả scan cho một file.
+message ScanResponse {
+  string              path         = 1; // Đường dẫn file đã scan
+  ClassificationLevel level        = 2; // Cấp độ phân loại dạng enum
+  ScanStatus          status       = 3; // Trạng thái xử lý dạng enum
+  uint32              duration_ms  = 4; // Thời gian scan (millisecond)
+  uint32              match_count  = 5; // Tổng số findings
+  repeated Finding    findings     = 6; // Danh sách findings tối giản
+  uint32              error_code   = 7; // Mã lỗi số học (0 = không lỗi)
+}
+
+enum ClassificationLevel {
+  CLASSIFICATION_LEVEL_PUBLIC = 0;
+  CLASSIFICATION_LEVEL_INTERNAL = 1;
+  CLASSIFICATION_LEVEL_CONFIDENTIAL = 2;
+  CLASSIFICATION_LEVEL_SECRET = 3;
+}
+
+enum ScanStatus {
+  SCAN_STATUS_UNKNOWN = 0;
+  SCAN_STATUS_OK = 1;
+  SCAN_STATUS_ERROR = 2;
+  SCAN_STATUS_TIMEOUT = 3;
+  SCAN_STATUS_ENCRYPTED = 4;
+  SCAN_STATUS_SKIPPED_BINARY = 5;
+  SCAN_STATUS_SKIPPED_TOO_LARGE = 6;
+  SCAN_STATUS_SKIPPED_DIRECTORY = 7;
+}
+
+// Finding chỉ chứa định danh rule và tọa độ byte; không chứa dữ liệu thật.
+message Finding {
+  string rule_id    = 1; // ID quy tắc (vd: vn_id_001)
+  uint64 offset     = 2; // Vị trí byte trong file
+  uint32 length     = 3; // Độ dài (byte)
+  float  confidence = 4; // Điểm tin cậy 0.0-1.0
+}
+
+// ─── Ping messages ────────────────────────────────────────────────────────────
+
+message PingRequest {}
+
+message PingResponse {
+  string version = 1; // Phiên bản agent, vd: "1.0.0"
+}
+
+// ─── Status messages ──────────────────────────────────────────────────────────
+
+message StatusRequest {}
+
+// AgentStatus là trạng thái runtime của agent.
+message AgentStatus {
+  string version      = 1; // Phiên bản agent
+  string started_at   = 2; // Thời điểm khởi động (RFC 3339)
+  string uptime       = 3; // Thời gian hoạt động, vd: "2h15m30s"
+  int64  active_conns = 4; // Số kết nối đang hoạt động
+  int64  total_scans  = 5; // Tổng số file đã scan kể từ khi khởi động
+}

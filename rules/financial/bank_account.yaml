@@ -1,0 +1,95 @@
+# FIN-002 — Số tài khoản ngân hàng Việt Nam
+# Theo quy định NHNN: các ngân hàng VN sử dụng số TK 9-14 chữ số.
+# Một số ngân hàng đã chuyển sang 12-15 số (theo tiêu chuẩn ISO 13616).
+#
+# ĐẶC ĐIỂM CỦA SỐ TK NGÂN HÀNG VN:
+#   Vietcombank:   13 số (04xxxxxxxxxxxxxxx)
+#   Vietinbank:    14 số
+#   BIDV:          14 số
+#   Agribank:      13 số
+#   Techcombank:   9 số (cũ), 12-13 số (mới)
+#   MB Bank:       12 số
+#   VPBank:        10-13 số
+#
+# FP risk rất cao (bất kỳ dãy 9-14 số nào đều khớp pattern).
+# BẮT BUỘC có keyword "ngân hàng", "STK", "tài khoản" gần đó.
+
+id: bank_account_001
+name: "Số tài khoản ngân hàng Việt Nam"
+category: financial
+level: CONFIDENTIAL
+weight: 0.90
+priority: 70
+tags: [financial, bank_account, account_number]
+enabled: true
+
+patterns:
+  # Số tài khoản ngân hàng VN phổ biến (9-14 chữ số)
+  # Không dùng \b thuần vì số TK có thể đứng sau ký tự như "TK:"
+  - regex: '(?:^|[^\d])(\d{9,14})(?:[^\d]|$)'
+    description: "Số tài khoản NH VN 9–14 chữ số (context_required bắt buộc)"
+    confidence: 0.70
+    context_required: true
+    validators: [vn_bank_prefix]
+
+  # Số tài khoản dài hơn (12-16 số) — ngân hàng mới / quốc tế hóa
+  - regex: '(?:^|[^\d])(\d{15,16})(?:[^\d]|$)'
+    description: "Số tài khoản NH dài 15-16 số (chuẩn quốc tế hóa)"
+    confidence: 0.85
+    context_required: true
+    validators: [vn_bank_prefix]
+
+  # Định dạng có dấu cách hoặc gạch ngang (vd: 0123 4567 8901)
+  - regex: '\b\d{4}[\s\-]\d{4}[\s\-]\d{4,6}\b'
+    description: "Số tài khoản định dạng nhóm (4-4-4/6)"
+    confidence: 0.75
+    context_required: true
+    validators: [vn_bank_prefix]
+
+  # Mã CITAD / NAPAS routing (6-9 số đầu đặc trưng của ngân hàng VN)
+  - regex: '\b(?:0400|0600|7901|9704|9999|1970|2002|4200)\d{6,10}\b'
+    description: "Số TK có BIN/prefix ngân hàng VN đặc trưng"
+    confidence: 0.80
+    context_required: true
+
+keywords:
+  primary:
+    - "tài khoản"
+    - "số TK"
+    - "STK"
+    - "số tài khoản"
+    - "account number"
+    - "bank account"
+    - "chuyển khoản"
+    - "tài khoản ngân hàng"
+  secondary:
+    - "ngân hàng"
+    - "Vietcombank"
+    - "BIDV"
+    - "Agribank"
+    - "VPBank"
+    - "Techcombank"
+    - "MB Bank"
+    - "ACB"
+    - "TPBank"
+    - "Vietinbank"
+    - "SHB"
+    - "OCB"
+    - "MSB"
+    - "SeABank"
+    - "HDBank"
+    - "LienVietPostBank"
+    - "ABBANK"
+    - "VIB"
+    - "chủ tài khoản"
+    - "beneficiary"
+    - "người thụ hưởng"
+    - "routing"
+    - "swift"
+    - "nộp tiền"
+    - "rút tiền"
+    - "số dư"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true

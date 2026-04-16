@@ -1,0 +1,74 @@
+# PII-001 — Căn cước công dân (CCCD) / Chứng minh nhân dân (CMND)
+# Nghị định 13/2023/NĐ-CP — danh mục dữ liệu cá nhân nhạy cảm
+#
+# CCCD 12 số: cấp từ 2012, hiện là định danh chính thức.
+# CMND 9 số:  cấp trước 2012, vẫn còn lưu hành đến hết 2024.
+#
+# FP risk cao vì 9/12 chữ số xuất hiện phổ biến (mã đơn hàng, số serial...).
+# Yêu cầu TỐI THIỂU 1 keyword ngữ cảnh để xác nhận.
+
+id: vn_id_001
+name: "Căn cước công dân / CMND Việt Nam"
+category: pii
+level: CONFIDENTIAL
+weight: 0.90
+priority: 80
+tags: [pii, identity, pii_vn_id, vn_specific]
+enabled: true
+
+patterns:
+  # CCCD 12 số — word boundary chặt để tránh khớp trong dãy số dài hơn
+  - regex: '(?:^|[^\d])\b(\d{12})\b(?:[^\d]|$)'
+    description: "CCCD 12 chữ số (từ 2012) — có word boundary"
+    confidence: 0.85
+    context_required: true
+    validators: [vn_cccd_prefix]
+
+  # CMND 9 số — confidence thấp hơn vì 9 số dễ bị nhầm hơn
+  - regex: '(?:^|[^\d])\b(\d{9})\b(?:[^\d]|$)'
+    description: "CMND 9 chữ số (trước 2012)"
+    confidence: 0.70
+    context_required: true
+
+  # CCCD trong MRZ (Machine Readable Zone) — thẻ CCCD chip
+  - regex: 'VNM\d{12}[MF]'
+    description: "CCCD trong MRZ của thẻ chip (quốc tịch VNM + 12 số + giới tính)"
+    confidence: 0.97
+    context_required: false
+
+keywords:
+  primary:
+    - "căn cước"
+    - "CMND"
+    - "CCCD"
+    - "chứng minh nhân dân"
+    - "số định danh"
+    - "số định danh cá nhân"
+    - "giấy tờ tùy thân"
+    - "số định danh quốc gia"
+    - "căn cước công dân"
+    - "chứng minh thư"
+  secondary:
+    - "identity"
+    - "ID number"
+    - "national ID"
+    - "cấp ngày"
+    - "nơi cấp"
+    - "ngày cấp"
+    - "có giá trị đến"
+    - "quê quán"
+    - "hộ khẩu thường trú"
+    - "nơi thường trú"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true
+
+escalation:
+  keywords:
+    - "tài khoản"
+    - "ngân hàng"
+    - "thẻ tín dụng"
+    - "mật khẩu"
+    - "password"
+  escalate_to: SECRET

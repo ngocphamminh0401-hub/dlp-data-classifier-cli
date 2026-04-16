@@ -1,0 +1,55 @@
+# ORG-001 — Nhãn phân loại bảo mật tài liệu (Document Classification Labels)
+# Theo Luật Bảo vệ Bí mật Nhà nước 2018 (Luật số 29/2018/QH14)
+# và Nghị định 26/2020/NĐ-CP về phân loại tài liệu mật.
+#
+# CÁC CẤP ĐỘ TÀI LIỆU MẬT:
+#   TỐI MẬT  — tương đương TOP SECRET
+#   MẬT      — tương đương SECRET
+#   BÍ MẬT   — tương đương CONFIDENTIAL
+#
+# NHÃN DOANH NGHIỆP (theo tiêu chuẩn ISO 27001 và thực hành của VNPT):
+#   RESTRICTED / CONFIDENTIAL / INTERNAL USE ONLY / PROPRIETARY
+#
+# Strategy: Pattern match word-level labels, ưu tiên scan header/footer.
+# Phát hiện nhãn này → nâng ngay lên cấp tương ứng (không qua scoring).
+
+id: classified_doc_001
+name: "ORG-001 Tài liệu MẬT / BẢO MẬT"
+category: org
+level: SECRET
+weight: 0.95
+priority: 95
+tags: [org, classified_doc, restricted]
+enabled: true
+
+patterns:
+  - regex: '(?i)\b(?:TỐI\s*MẬT|MẬT|BÍ\s*MẬT|CỰC\s*KỲ\s*BÍ\s*MẬT|RESTRICTED|CONFIDENTIAL|TOP\s*SECRET)\b'
+    description: "ORG-001 theo spec PDF"
+    confidence: 0.96
+    context_required: false
+    override_level: SECRET
+
+keywords:
+  primary:
+    - "TỐI MẬT"
+    - "MẬT"
+    - "BÍ MẬT"
+    - "TOP SECRET"
+    - "RESTRICTED"
+    - "CLASSIFIED"
+    - "tài liệu mật"
+    - "bí mật nhà nước"
+  secondary:
+    - "không được sao chép"
+    - "không phổ biến"
+    - "lưu hành hạn chế"
+    - "security classification"
+    - "bảo mật"
+    - "phân loại tài liệu"
+
+escalation:
+  keywords:
+    - "header"
+    - "footer"
+    - "watermark"
+  escalate_to: SECRET

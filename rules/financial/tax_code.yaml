@@ -1,0 +1,75 @@
+# FIN / PII-006 — Mã số thuế Việt Nam (MST)
+# Theo Luật Quản lý Thuế 2019 và Thông tư 105/2020/TT-BTC.
+#
+# CẤU TRÚC MST:
+#   Doanh nghiệp:   10 số (vd: 0100100000)
+#   Chi nhánh:      10 số + gạch ngang + 3 số (vd: 0100100000-001)
+#   Cá nhân:        13 số  — từ 2021 đồng nhất với số định danh cá nhân (CCCD)
+#   Hộ kinh doanh:  10 số (giống doanh nghiệp) + hậu tố riêng
+#
+# Lưu ý: MST 10 số dễ nhầm với số CCCD cũ (9 số+padding) hoặc số tài khoản.
+# MST 13 số dễ nhầm với CCCD 12 số + padding.
+# BẮT BUỘC keyword "mã số thuế", "MST", "tax" để phân biệt.
+
+id: tax_code_001
+name: "Mã số thuế Việt Nam (doanh nghiệp và cá nhân)"
+category: financial
+level: CONFIDENTIAL
+weight: 0.85
+priority: 60
+tags: [financial, tax_code, business_id, pii_tax]
+enabled: true
+
+patterns:
+  # MST chi nhánh: 10 số + gạch ngang + 3 số — pattern đặc trưng nhất
+  - regex: '\b\d{10}-\d{3}\b'
+    description: "MST chi nhánh (10 số + hậu tố 3 số)"
+    confidence: 0.92
+    context_required: false
+
+  # MST doanh nghiệp: 10 số (2 số đầu là mã tỉnh: 01-96)
+  - regex: '\b(?:0[1-9]|[1-8]\d|9[0-6])\d{8}\b'
+    description: "MST doanh nghiệp 10 số (2 số đầu là mã tỉnh/thành)"
+    confidence: 0.82
+    context_required: true
+
+  # MST cá nhân: 13 số (từ 2021 — đồng nhất với CCCD)
+  - regex: '\b\d{13}\b'
+    description: "MST cá nhân 13 số (từ 2021, đồng nhất với số định danh)"
+    confidence: 0.78
+    context_required: true
+
+  # MST tổng quát 10 số (dự phòng, confidence thấp)
+  - regex: '\b\d{10}\b'
+    description: "MST 10 số (dự phòng — yêu cầu keyword bắt buộc)"
+    confidence: 0.70
+    context_required: true
+
+keywords:
+  primary:
+    - "mã số thuế"
+    - "MST"
+    - "tax code"
+    - "TIN"
+    - "mã doanh nghiệp"
+    - "mã số doanh nghiệp"
+    - "MSDN"
+    - "đăng ký kinh doanh"
+    - "tax identification"
+    - "mã số cá nhân"
+  secondary:
+    - "cục thuế"
+    - "chi cục thuế"
+    - "hóa đơn"
+    - "VAT"
+    - "GTGT"
+    - "thuế thu nhập"
+    - "TNCN"
+    - "TNDN"
+    - "kê khai thuế"
+    - "quyết toán thuế"
+    - "hoàn thuế"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true

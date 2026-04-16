@@ -1,0 +1,80 @@
+# PII-002 — Hộ chiếu Việt Nam (Vietnamese Passport)
+# Theo Luật xuất nhập cảnh 2019 sửa đổi 2023.
+#
+# Số hộ chiếu VN: 1 chữ hoa + 7 hoặc 8 chữ số (loại P: phổ thông; C: công vụ; NG: ngoại giao)
+# Loại P (phổ thông):   P + 7 số  → P1234567  (trước 2022)
+#                        B + 8 số  → B12345678 (từ 2022, hộ chiếu chip)
+# Loại C (công vụ):     C + 7 số
+# Loại NG (ngoại giao): NG + 7 số (2 chữ cái đầu)
+#
+# Lưu ý: Pattern cũng có thể bắt giá trị khác (vd: mã sản phẩm 1 chữ + 7 số).
+# Bắt buộc kết hợp keyword "hộ chiếu" hoặc "passport".
+
+id: passport_001
+name: "Hộ chiếu Việt Nam"
+category: pii
+level: CONFIDENTIAL
+weight: 0.88
+priority: 78
+tags: [pii, identity, passport, travel_doc, vn_specific]
+enabled: true
+
+patterns:
+  # Hộ chiếu phổ thông mới (từ 2022): B + 8 số
+  - regex: '\bB\d{8}\b'
+    description: "Hộ chiếu chip mới loại B (từ 2022)"
+    confidence: 0.88
+    context_required: true
+
+  # Hộ chiếu phổ thông cũ: P + 7 số
+  - regex: '\bP\d{7}\b'
+    description: "Hộ chiếu phổ thông cũ loại P (trước 2022)"
+    confidence: 0.85
+    context_required: true
+
+  # Hộ chiếu công vụ / ngoại giao: C/NG/X + 7-8 số
+  - regex: '\b(?:C|NG|X)\d{7,8}\b'
+    description: "Hộ chiếu công vụ (C) / ngoại giao (NG) / đặc biệt (X)"
+    confidence: 0.82
+    context_required: true
+
+  # Generic: 1-2 chữ hoa + 7-8 số (bắt tất cả loại, confidence thấp hơn)
+  - regex: '\b[A-Z]{1,2}\d{7,8}\b'
+    description: "Tài liệu du lịch dạng chữ+số (MRZ compatible)"
+    confidence: 0.65
+    context_required: true
+
+  # Machine Readable Zone (MRZ) của hộ chiếu VN — 2 dòng 44 ký tự
+  # Dòng 1: P<VNM + họ tên << + padding
+  - regex: 'P<VNM[A-Z<]{39}'
+    description: "MRZ dòng 1 — hộ chiếu Việt Nam (P<VNM)"
+    confidence: 0.99
+    context_required: false
+
+keywords:
+  primary:
+    - "hộ chiếu"
+    - "passport"
+    - "PASSPORT NO"
+    - "số hộ chiếu"
+    - "passport number"
+    - "travel document"
+    - "tài liệu du lịch"
+    - "số hộ chiếu:"
+  secondary:
+    - "nơi sinh"
+    - "place of birth"
+    - "quốc tịch"
+    - "nationality"
+    - "ngày hết hạn"
+    - "date of expiry"
+    - "date of issue"
+    - "ngày cấp"
+    - "MRZ"
+    - "machine readable"
+    - "xuất nhập cảnh"
+    - "visa"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true

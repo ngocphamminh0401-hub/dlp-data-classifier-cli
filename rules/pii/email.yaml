@@ -1,0 +1,46 @@
+# PII-004 — Địa chỉ Email
+# RFC 5322 simplified. Email là PII theo GDPR và Nghị định 13/2023.
+#
+# Phân loại 2 cấp:
+#   - Email thông thường → INTERNAL (kém nhạy cảm hơn)
+#   - Email nội bộ VNPT → CONFIDENTIAL (override_level)
+#   - Email có kèm họ tên rõ ràng → nâng qua compound rule
+
+id: email_001
+name: "Địa chỉ email"
+category: pii
+level: INTERNAL
+weight: 0.85
+priority: 45
+tags: [pii, email, contact_info]
+enabled: true
+
+patterns:
+  # Email nội bộ VNPT — phải match trước email thông thường (confidence cao hơn)
+  # Các domain VNPT hiện tại và các đơn vị thành viên
+  - regex: '[A-Za-z0-9._%+\-]+@(?:vnpt\.vn|vnpt-i\.vn|vnptit\.vn|vinaphone\.vn|vnpttechnology\.vn|vnpt\.com\.vn|vnpt-net\.vn|vnptmedia\.vn)'
+    description: "Email nội bộ VNPT (tất cả domain VNPT)"
+    confidence: 0.98
+    context_required: false
+    override_level: INTERNAL
+
+  # Email tổ chức chính phủ VN (.gov.vn, .edu.vn)
+  - regex: '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.(?:gov\.vn|edu\.vn|mil\.vn)'
+    description: "Email tổ chức nhà nước VN (.gov.vn / .edu.vn / .mil.vn)"
+    confidence: 0.95
+    context_required: false
+    override_level: INTERNAL
+
+  # Email chuẩn RFC 5322 (đơn giản hóa) — tất cả domain
+  # Loại bỏ: no-reply@, noreply@, donotreply@, bounce@, mailer-daemon@
+  - regex: '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,7}'
+    description: "Email chuẩn (mọi domain) — tổng quát"
+    confidence: 0.88
+    context_required: false
+
+keywords: []
+
+false_positive_reduction:
+  min_context_window: 0
+  # Email tự nhận dạng qua ký tự @ — không cần keyword context
+  exclude_if_no_keywords: false

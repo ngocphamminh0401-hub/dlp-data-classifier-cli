@@ -1,0 +1,87 @@
+# FIN-006 — Thông tin lương / thu nhập / thù lao
+# Thông tin lương thuộc dữ liệu cá nhân nhạy cảm theo Nghị định 13/2023/NĐ-CP.
+# Đặc biệt nhạy cảm trong: bảng lương, hợp đồng lao động, phiếu lương.
+#
+# THÁCH THỨC:
+#   - Số tiền xuất hiện rất phổ biến (giá sản phẩm, hóa đơn, báo giá...).
+#   - Phân biệt "lương nhân viên" với "đơn giá dịch vụ" cần context rõ ràng.
+#   - Pattern PHẢI đi kèm keyword lương/thu nhập để tránh FP.
+
+id: income_001
+name: "Thông tin lương / thu nhập / thù lao"
+category: financial
+level: CONFIDENTIAL
+weight: 0.78
+priority: 52
+tags: [financial, income, salary, payroll, hr_data]
+enabled: true
+
+patterns:
+  # Lương/thu nhập + số tiền VND — "lương: 20,000,000 đồng"
+  - regex: '(?i)(?:lương|thu\s*nhập|mức\s*lương|lương\s*cơ\s*bản|lương\s*net|lương\s*gross|lương\s*tháng|lương\s*năm|thu\s*nhập\s*ròng|thu\s*nhập\s*gộp)\s*[:=]?\s*[\d.,]+\s*(?:đồng|VND|vnđ|triệu|tr\.?|nghìn|k\b)?'
+    description: "Lương/thu nhập VN + số tiền (VND)"
+    confidence: 0.85
+    context_required: false
+
+  # Thù lao / hoa hồng / thưởng
+  - regex: '(?i)(?:thù\s*lao|hoa\s*hồng|mức\s*thưởng|thưởng\s*KPI|bonus|commission)\s*[:=]?\s*[\d.,]+\s*(?:đồng|VND|vnđ|triệu|tr\.?|%)?'
+    description: "Thù lao / hoa hồng / thưởng + số tiền"
+    confidence: 0.82
+    context_required: false
+
+  # Salary/income tiếng Anh
+  - regex: '(?i)(?:salary|income|wage|compensation|remuneration|pay\s*rate|annual\s*salary|monthly\s*salary)\s*[:=]?\s*(?:USD|VND|EUR|GBP)?\s*[\d.,]+'
+    description: "Salary/income tiếng Anh + số tiền"
+    confidence: 0.82
+    context_required: false
+
+  # Bảng lương (payroll context) — số tiền VND trong cột "lương"
+  # Dành cho file Excel/CSV khi header chứa "lương" và cột số
+  - regex: '(?i)(?:lương|salary|income)\b.*?(\d{1,3}(?:[.,]\d{3})+)'
+    description: "Số tiền dạng bảng lương (có separator phân nhóm)"
+    confidence: 0.72
+    context_required: true
+
+keywords:
+  primary:
+    - "lương"
+    - "thu nhập"
+    - "salary"
+    - "income"
+    - "thù lao"
+    - "thưởng"
+    - "bảng lương"
+    - "payroll"
+    - "mức lương"
+    - "lương net"
+    - "lương gross"
+  secondary:
+    - "TNCN"
+    - "thuế thu nhập cá nhân"
+    - "personal income tax"
+    - "bảo hiểm xã hội"
+    - "BHXH"
+    - "hợp đồng lao động"
+    - "employment contract"
+    - "phiếu lương"
+    - "pay slip"
+    - "payslip"
+    - "nhân sự"
+    - "HR"
+    - "phòng nhân sự"
+    - "bonus"
+    - "KPI"
+    - "commission"
+    - "hoa hồng"
+    - "thưởng doanh số"
+
+keyword_logic:
+  min_primary: 1
+  min_secondary: 0
+  confidence_per_keyword: 0.05
+  max_confidence: 0.95
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: false
+  # Pattern đã nhúng keyword lương/salary vào regex nên không cần exclude
