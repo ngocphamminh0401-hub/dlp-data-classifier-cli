@@ -1,0 +1,51 @@
+# ORG-001b — Nhãn CONFIDENTIAL / BÍ MẬT
+# Rule bổ sung tách từ classified_doc_001.
+# Phát hiện nhãn cấp CONFIDENTIAL (L3) — không nâng lên SECRET.
+#
+# Lý do tồn tại: classified_doc_001 trước đây dùng override_level=SECRET
+# cho cả "CONFIDENTIAL" → file L3 bị phân loại nhầm thành RESTRICTED.
+
+id: classified_doc_002
+name: "ORG-001b Tài liệu BÍ MẬT / CONFIDENTIAL"
+category: org
+level: CONFIDENTIAL
+weight: 0.92
+priority: 94
+tags: [org, classified_doc, confidential]
+enabled: true
+
+patterns:
+  # BÍ MẬT (VN) xuất hiện độc lập
+  - regex: '(?i)\bBÍ\s*MẬT\b'
+    description: "ORG-001b nhãn bí mật (VN)"
+    confidence: 0.95
+    context_required: false
+    override_level: CONFIDENTIAL
+
+  # CONFIDENTIAL trong ngữ cảnh phân loại (gần marker "Phân loại:")
+  - regex: '(?i)(?:phân\s*loại|classification|security\s*label|label)\s*[:=—\-]\s*CONFIDENTIAL\b'
+    description: "ORG-001b CONFIDENTIAL sau nhãn phân loại"
+    confidence: 0.96
+    context_required: false
+    override_level: CONFIDENTIAL
+
+  # CONFIDENTIAL standalone — confidence thấp hơn để tránh FP trong văn bản thông thường
+  - regex: '(?i)\bCONFIDENTIAL\b'
+    description: "ORG-001b CONFIDENTIAL độc lập"
+    confidence: 0.78
+    context_required: true
+    override_level: CONFIDENTIAL
+
+keywords:
+  primary:
+    - "BÍ MẬT"
+    - "CONFIDENTIAL"
+    - "bí mật thương mại"
+    - "thông tin mật"
+  secondary:
+    - "không được sao chép"
+    - "lưu hành hạn chế"
+    - "security classification"
+    - "phân loại tài liệu"
+    - "NDA"
+    - "hợp đồng bảo mật"

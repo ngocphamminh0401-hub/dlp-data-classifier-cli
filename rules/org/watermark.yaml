@@ -16,10 +16,41 @@ tags: [org, watermark, internal_label, distribution_control]
 enabled: true
 
 patterns:
-  - regex: '(?i)(?:chỉ\s*lưu\s*hành\s*nội\s*bộ|internal\s*use\s*only|không\s*phát\s*hành\s*ra\s*ngoài|do\s*not\s*distribute|for\s*internal\s*use)'
-    description: "ORG-006 theo spec PDF"
+  # Cụm từ chỉ lưu hành nội bộ đầy đủ — tín hiệu rất mạnh
+  - regex: '(?i)(?:chỉ\s*lưu\s*hành\s*nội\s*bộ|internal\s*use\s*only|do\s*not\s*distribute|for\s*internal\s*use\s*only)'
+    description: "ORG-006a nhãn lưu hành nội bộ đầy đủ"
     confidence: 0.93
     context_required: false
+
+  # Nhãn "Phân loại: INTERNAL" hoặc "Phân loại: NỘI BỘ" — rất đặc trưng
+  - regex: '(?i)(?:phân\s*loại|classification|label)\s*[:=—\-]\s*(?:INTERNAL|NỘI\s*BỘ)\b'
+    description: "ORG-006b INTERNAL/NỘI BỘ sau nhãn phân loại"
+    confidence: 0.95
+    context_required: false
+
+  # NỘI BỘ kết hợp với hạn chế phổ biến — các biến thể thực tế trong dataset
+  - regex: '(?i)NỘI\s*BỘ\s*[-—–]\s*(?:Không\s*phổ\s*biến|hạn\s*chế\s*phổ\s*biến|hạn\s*chế\s*lưu\s*hành|hạn\s*chế\s*phát\s*hành)'
+    description: "ORG-006c NỘI BỘ + hạn chế phổ biến"
+    confidence: 0.92
+    context_required: false
+
+  # INTERNAL kết hợp với hạn chế — vd: "INTERNAL — Hạn chế phổ biến"
+  - regex: '(?i)INTERNAL\s*[-—–]\s*(?:Hạn\s*chế|Không\s*phổ\s*biến|restricted|limited)'
+    description: "ORG-006d INTERNAL + hạn chế"
+    confidence: 0.92
+    context_required: false
+
+  # Không phổ biến ra ngoài / không phát hành ra ngoài
+  - regex: '(?i)không\s*(?:phổ\s*biến|phát\s*hành)\s*ra\s*ngoài'
+    description: "ORG-006e không phổ biến/phát hành ra ngoài"
+    confidence: 0.88
+    context_required: false
+
+  # INTERNAL standalone với word boundary — confidence thấp, cần context
+  - regex: '(?i)\bINTERNAL\b'
+    description: "ORG-006f INTERNAL standalone"
+    confidence: 0.72
+    context_required: true
 
 keywords:
   primary:
@@ -29,13 +60,15 @@ keywords:
     - "internal use only"
     - "chỉ lưu hành nội bộ"
     - "không phổ biến"
+    - "không phổ biến ra ngoài"
     - "do not distribute"
+    - "hạn chế phổ biến"
+    - "hạn chế lưu hành"
   secondary:
-    - "confidential"
     - "bảo mật"
-    - "restricted"
     - "hạn chế"
     - "phát hành"
     - "circulation"
     - "VNPT"
     - "tài liệu"
+    - "phân loại"

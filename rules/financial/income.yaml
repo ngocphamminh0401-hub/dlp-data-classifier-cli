@@ -77,11 +77,12 @@ keywords:
 
 keyword_logic:
   min_primary: 1
-  min_secondary: 0
+  min_secondary: 1
   confidence_per_keyword: 0.05
   max_confidence: 0.95
 
 false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: false
-  # Pattern đã nhúng keyword lương/salary vào regex nên không cần exclude
+  # min_secondary=1 bắt buộc: file phải có ít nhất 1 keyword phụ (BHXH, phiếu lương,
+  # hợp đồng lao động...) để phân biệt dữ liệu lương cá nhân với bảng ngân sách phòng ban.

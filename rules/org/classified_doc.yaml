@@ -2,19 +2,15 @@
 # Theo Luật Bảo vệ Bí mật Nhà nước 2018 (Luật số 29/2018/QH14)
 # và Nghị định 26/2020/NĐ-CP về phân loại tài liệu mật.
 #
-# CÁC CẤP ĐỘ TÀI LIỆU MẬT:
-#   TỐI MẬT  — tương đương TOP SECRET
-#   MẬT      — tương đương SECRET
-#   BÍ MẬT   — tương đương CONFIDENTIAL
+# TÁCH THÀNH 2 RULE ĐỂ MAP ĐÚNG LEVEL:
+#   classified_doc_001  — SECRET   : TỐI MẬT, MẬT, RESTRICTED, TOP SECRET
+#   classified_doc_002  — CONFIDENTIAL : CONFIDENTIAL, BÍ MẬT
 #
-# NHÃN DOANH NGHIỆP (theo tiêu chuẩn ISO 27001 và thực hành của VNPT):
-#   RESTRICTED / CONFIDENTIAL / INTERNAL USE ONLY / PROPRIETARY
-#
-# Strategy: Pattern match word-level labels, ưu tiên scan header/footer.
-# Phát hiện nhãn này → nâng ngay lên cấp tương ứng (không qua scoring).
+# Lý do tách: rule cũ dùng override_level=SECRET cho tất cả nhãn kể cả
+# "CONFIDENTIAL" → toàn bộ file L3 bị nâng nhầm lên RESTRICTED.
 
 id: classified_doc_001
-name: "ORG-001 Tài liệu MẬT / BẢO MẬT"
+name: "ORG-001 Tài liệu TỐI MẬT / MẬT / RESTRICTED"
 category: org
 level: SECRET
 weight: 0.95
@@ -23,33 +19,39 @@ tags: [org, classified_doc, restricted]
 enabled: true
 
 patterns:
-  - regex: '(?i)\b(?:TỐI\s*MẬT|MẬT|BÍ\s*MẬT|CỰC\s*KỲ\s*BÍ\s*MẬT|RESTRICTED|CONFIDENTIAL|TOP\s*SECRET)\b'
-    description: "ORG-001 theo spec PDF"
+  # TỐI MẬT / TOP SECRET xuất hiện độc lập — tín hiệu rất mạnh
+  - regex: '(?i)\b(?:TỐI\s*MẬT|TOP\s*SECRET|CỰC\s*KỲ\s*BÍ\s*MẬT)\b'
+    description: "ORG-001a nhãn tối mật / top secret"
+    confidence: 0.97
+    context_required: false
+    override_level: SECRET
+
+  # RESTRICTED / MẬT trong ngữ cảnh phân loại (gần marker "Phân loại:")
+  - regex: '(?i)(?:phân\s*loại|classification|security\s*label|label)\s*[:=—\-]\s*(?:RESTRICTED|MẬT)\b'
+    description: "ORG-001b RESTRICTED/MẬT sau nhãn phân loại"
     confidence: 0.96
     context_required: false
+    override_level: SECRET
+
+  # RESTRICTED standalone (word boundary) — confidence thấp hơn, cần context
+  # Không match "MẬT" độc lập: từ này xuất hiện phổ biến trong "bảo mật", "mật khẩu",
+  # "bí mật" → quá nhiều false positive. Chỉ match khi có tiền tố "Phân loại:" (pattern trên).
+  - regex: '(?i)\bRESTRICTED\b'
+    description: "ORG-001c RESTRICTED standalone"
+    confidence: 0.82
+    context_required: true
     override_level: SECRET
 
 keywords:
   primary:
     - "TỐI MẬT"
     - "MẬT"
-    - "BÍ MẬT"
     - "TOP SECRET"
     - "RESTRICTED"
-    - "CLASSIFIED"
     - "tài liệu mật"
     - "bí mật nhà nước"
   secondary:
     - "không được sao chép"
-    - "không phổ biến"
     - "lưu hành hạn chế"
     - "security classification"
-    - "bảo mật"
     - "phân loại tài liệu"
-
-escalation:
-  keywords:
-    - "header"
-    - "footer"
-    - "watermark"
-  escalate_to: SECRET

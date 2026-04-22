@@ -5,8 +5,8 @@
 # TỔNG KẾT:
 #   PII      — 6 rules (vn_id, passport, phone, email, dob, vn_name)
 #   Financial— 7 rules (credit_card, bank_account, tax_code, swift_bic, cvv, iban, income)
-#   Org      — 7 rules (classified_doc, contract, internal_code, internal_ip, credentials, watermark, vnpt_email)
-#   TỔNG     — 20 rules
+#   Org      — 8 rules (classified_doc x2, contract, internal_code, internal_ip, credentials, watermark, vnpt_email)
+#   TỔNG     — 21 rules
 
 includes:
   # ── PII (Thông tin cá nhân — Nghị định 13/2023/NĐ-CP) ─────────────────────
@@ -54,8 +54,11 @@ includes:
   # priority: 97 → credentials (SECRET — fast-fail candidate số 2)
   - org/credentials.yaml
 
-  # priority: 95 → tài liệu mật (SECRET — nhãn phân loại chính thức)
+  # priority: 95 → tài liệu mật cấp SECRET (TỐI MẬT / MẬT / RESTRICTED)
   - org/classified_doc.yaml
+
+  # priority: 94 → tài liệu mật cấp CONFIDENTIAL (BÍ MẬT / CONFIDENTIAL)
+  - org/classified_doc_002.yaml
 
   # priority: 60 → hợp đồng + mã PO (CONFIDENTIAL)
   - org/contract.yaml
