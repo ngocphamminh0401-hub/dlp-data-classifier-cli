@@ -20,7 +20,7 @@
 id: swift_bic_001
 name: "Mã SWIFT/BIC ngân hàng"
 category: financial
-level: CONFIDENTIAL
+level: INTERNAL
 weight: 0.87
 priority: 65
 tags: [financial, swift, bic, international_banking]

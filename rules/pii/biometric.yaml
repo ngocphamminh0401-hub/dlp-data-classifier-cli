@@ -1,0 +1,74 @@
+# PII — Dữ liệu sinh trắc học (Biometric Data)
+# NĐ 13/2023/NĐ-CP Điều 2, Khoản 4 — sinh trắc học là dữ liệu cá nhân NHẠY CẢM ĐẶC BIỆT.
+# GDPR Article 9(1) — biometric data processed for unique identification = special category.
+#
+# Rò rỉ sinh trắc học KHÔNG THỂ KHẮC PHỤC — mật khẩu có thể đổi, vân tay không thể đổi.
+# Đặc biệt nguy hiểm khi xuất hiện trong file: template vân tay, embedding khuôn mặt,
+# dữ liệu mống mắt, giọng nói, chữ ký sinh trắc (behavioral).
+# → Level: SECRET (L4)
+
+id: biometric_001
+name: "Dữ liệu sinh trắc học (vân tay, khuôn mặt, mống mắt)"
+category: pii
+level: SECRET
+weight: 0.92
+priority: 83
+tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13]
+enabled: true
+
+patterns:
+  # Từ khóa sinh trắc học trực tiếp — xuất hiện trong file = cực nguy hiểm
+  - regex: '(?i)(?:fingerprint|vân\s*tay|dấu\s*vân\s*tay|face\s*id|face\s*recognition|nhận\s*dạng\s*khuôn\s*mặt|facial\s*recognition|sinh\s*trắc\s*học|biometric(?:\s*data)?|iris\s*scan|võng\s*mạc|retina|voice\s*print|nhận\s*dạng\s*giọng\s*nói)'
+    description: "Từ khóa sinh trắc học trực tiếp"
+    confidence: 0.88
+    context_required: false
+
+  # Template / embedding sinh trắc (chuỗi base64/hex dài sau label sinh trắc)
+  - regex: '(?i)(?:fingerprint|biometric|face)\s*(?:template|data|hash|embedding|vector|feature)\s*[:=]\s*[A-Za-z0-9+/=]{20,}'
+    description: "Template / embedding dữ liệu sinh trắc học"
+    confidence: 0.95
+    context_required: false
+
+  # Dữ liệu CCCD chip — chứa sinh trắc học nhúng
+  - regex: '(?i)(?:dữ\s*liệu\s*chip|chip\s*data|contactless\s*chip|NFC\s*data|thẻ\s*chip|ePassport\s*data|eMRTD)'
+    description: "Dữ liệu chip CCCD / hộ chiếu điện tử (chứa sinh trắc)"
+    confidence: 0.85
+    context_required: false
+
+  # FaceID / TouchID trong ngữ cảnh xác thực kỹ thuật số
+  - regex: '(?i)(?:touchid|touch\s*id|faceid|face\s*id|windows\s*hello|liveness\s*detection|anti-spoofing|nhận\s*dạng\s*sinh\s*trắc)'
+    description: "Xác thực sinh trắc kỹ thuật số (TouchID, FaceID, Windows Hello)"
+    confidence: 0.82
+    context_required: true
+
+keywords:
+  primary:
+    - "sinh trắc học"
+    - "biometric"
+    - "vân tay"
+    - "fingerprint"
+    - "khuôn mặt"
+    - "face recognition"
+    - "nhận dạng khuôn mặt"
+    - "mống mắt"
+    - "iris"
+    - "giọng nói"
+    - "voice recognition"
+    - "FaceID"
+    - "TouchID"
+    - "nhận dạng sinh trắc"
+  secondary:
+    - "xác thực"
+    - "authentication"
+    - "template"
+    - "embedding"
+    - "chip CCCD"
+    - "ePassport"
+    - "liveness"
+    - "chống giả mạo"
+    - "anti-spoofing"
+    - "định danh sinh trắc"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: false

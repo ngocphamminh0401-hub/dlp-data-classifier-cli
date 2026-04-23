@@ -21,35 +21,40 @@ enabled: true
 
 patterns:
   # Hộ chiếu phổ thông mới (từ 2022): B + 8 số
+  # ICAO 9303 + NIST 800-63 IAL3 → giá trị danh tính quốc tế → SECRET
   - regex: '\bB\d{8}\b'
     description: "Hộ chiếu chip mới loại B (từ 2022)"
     confidence: 0.88
     context_required: true
+    override_level: SECRET
 
   # Hộ chiếu phổ thông cũ: P + 7 số
   - regex: '\bP\d{7}\b'
     description: "Hộ chiếu phổ thông cũ loại P (trước 2022)"
     confidence: 0.85
     context_required: true
+    override_level: SECRET
 
   # Hộ chiếu công vụ / ngoại giao: C/NG/X + 7-8 số
   - regex: '\b(?:C|NG|X)\d{7,8}\b'
     description: "Hộ chiếu công vụ (C) / ngoại giao (NG) / đặc biệt (X)"
     confidence: 0.82
     context_required: true
+    override_level: SECRET
 
-  # Generic: 1-2 chữ hoa + 7-8 số (bắt tất cả loại, confidence thấp hơn)
+  # Generic: 1-2 chữ hoa + 7-8 số — FP cao, giữ baseline CONFIDENTIAL
   - regex: '\b[A-Z]{1,2}\d{7,8}\b'
-    description: "Tài liệu du lịch dạng chữ+số (MRZ compatible)"
+    description: "Tài liệu du lịch dạng chữ+số (MRZ compatible) — FP cao"
     confidence: 0.65
     context_required: true
 
-  # Machine Readable Zone (MRZ) của hộ chiếu VN — 2 dòng 44 ký tự
-  # Dòng 1: P<VNM + họ tên << + padding
+  # Machine Readable Zone (MRZ) — chứa đủ thông tin giả mạo danh tính quốc tế
+  # ICAO Doc 9303 Part 3 — mức bảo vệ cao nhất
   - regex: 'P<VNM[A-Z<]{39}'
     description: "MRZ dòng 1 — hộ chiếu Việt Nam (P<VNM)"
     confidence: 0.99
     context_required: false
+    override_level: SECRET
 
 keywords:
   primary:

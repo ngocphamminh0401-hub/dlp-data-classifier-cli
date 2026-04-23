@@ -18,29 +18,28 @@ id: bank_account_001
 name: "Số tài khoản ngân hàng Việt Nam"
 category: financial
 level: CONFIDENTIAL
-weight: 0.90
+weight: 0.88
 priority: 70
 tags: [financial, bank_account, account_number]
 enabled: true
 
 patterns:
   # Số tài khoản ngân hàng VN phổ biến (9-14 chữ số)
-  # Không dùng \b thuần vì số TK có thể đứng sau ký tự như "TK:"
-  - regex: '(?:^|[^\d])(\d{9,14})(?:[^\d]|$)'
+  - regex: '\b(\d{9,14})\b'
     description: "Số tài khoản NH VN 9–14 chữ số (context_required bắt buộc)"
     confidence: 0.70
     context_required: true
     validators: [vn_bank_prefix]
 
-  # Số tài khoản dài hơn (12-16 số) — ngân hàng mới / quốc tế hóa
-  - regex: '(?:^|[^\d])(\d{15,16})(?:[^\d]|$)'
+  # Số tài khoản dài hơn (15-16 số) — ngân hàng mới / quốc tế hóa
+  - regex: '\b(\d{15,16})\b'
     description: "Số tài khoản NH dài 15-16 số (chuẩn quốc tế hóa)"
     confidence: 0.85
     context_required: true
     validators: [vn_bank_prefix]
 
   # Định dạng có dấu cách hoặc gạch ngang (vd: 0123 4567 8901)
-  - regex: '\b\d{4}[\s\-]\d{4}[\s\-]\d{4,6}\b'
+  - regex: '\b\d{4}[-\s]\d{4}[-\s]\d{4,6}\b'
     description: "Số tài khoản định dạng nhóm (4-4-4/6)"
     confidence: 0.75
     context_required: true
@@ -81,6 +80,17 @@ keywords:
     - "LienVietPostBank"
     - "ABBANK"
     - "VIB"
+    - "Sacombank"
+    - "Eximbank"
+    - "Nam A Bank"
+    - "Bac A Bank"
+    - "Kienlongbank"
+    - "PGBank"
+    - "mã CIF"
+    - "CIF"
+    - "tài khoản thanh toán"
+    - "tài khoản tiết kiệm"
+    - "CTK"
     - "chủ tài khoản"
     - "beneficiary"
     - "người thụ hưởng"
@@ -93,3 +103,15 @@ keywords:
 false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
+
+escalation:
+  keywords:
+    - "số dư"
+    - "sao kê"
+    - "lịch sử giao dịch"
+    - "giao dịch gần đây"
+    - "statement"
+    - "balance"
+    - "account statement"
+    - "lịch sử tài khoản"
+  escalate_to: SECRET

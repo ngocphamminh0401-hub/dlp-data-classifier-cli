@@ -11,7 +11,7 @@ id: income_001
 name: "Thông tin lương / thu nhập / thù lao"
 category: financial
 level: CONFIDENTIAL
-weight: 0.78
+weight: 0.82
 priority: 52
 tags: [financial, income, salary, payroll, hr_data]
 enabled: true

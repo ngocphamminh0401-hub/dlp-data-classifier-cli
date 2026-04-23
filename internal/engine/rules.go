@@ -130,6 +130,20 @@ type CompoundRule struct {
 	Name        string
 	Conditions  []string
 	ResultLevel ClassificationLevel
+
+	// MinComponentLevel ràng buộc: chỉ trigger khi MỖI condition có ít nhất một
+	// match ở level >= MinComponentLevel. Dùng để tránh over-classification:
+	// email(INTERNAL) + BIC(INTERNAL) không trigger "PII + Financial = SECRET".
+	// 0 = không ràng buộc (mọi level đều kích hoạt).
+	MinComponentLevel ClassificationLevel
+
+	// ViolationType là mã vi phạm quy định để trigger workflow riêng
+	// (ví dụ: "PCI_DSS_3.3.1", "HIPAA_PHI", "ACCOUNT_TAKEOVER_ENABLER").
+	// Rỗng = không có violation type đặc biệt.
+	ViolationType string
+
+	// AlertPriority là mức ưu tiên cảnh báo: "CRITICAL" | "HIGH" | "MEDIUM" | "".
+	AlertPriority string
 }
 
 // RuleSet is the full set of loaded and compiled rules.
@@ -141,9 +155,12 @@ type RuleSet struct {
 type masterIndex struct {
 	Includes []string `yaml:"includes"`
 	Compound []struct {
-		Name        string   `yaml:"name"`
-		Conditions  []string `yaml:"conditions"`
-		ResultLevel string   `yaml:"result_level"`
+		Name              string   `yaml:"name"`
+		Conditions        []string `yaml:"conditions"`
+		ResultLevel       string   `yaml:"result_level"`
+		MinComponentLevel string   `yaml:"min_component_level"`
+		ViolationType     string   `yaml:"violation_type"`
+		AlertPriority     string   `yaml:"alert_priority"`
 	} `yaml:"compound_rules"`
 }
 
@@ -174,9 +191,12 @@ func LoadRuleSet(dir string) (*RuleSet, error) {
 
 	for _, cr := range idx.Compound {
 		rs.CompoundRules = append(rs.CompoundRules, CompoundRule{
-			Name:        cr.Name,
-			Conditions:  cr.Conditions,
-			ResultLevel: ParseLevel(cr.ResultLevel),
+			Name:              cr.Name,
+			Conditions:        cr.Conditions,
+			ResultLevel:       ParseLevel(cr.ResultLevel),
+			MinComponentLevel: ParseLevel(cr.MinComponentLevel),
+			ViolationType:     cr.ViolationType,
+			AlertPriority:     cr.AlertPriority,
 		})
 	}
 

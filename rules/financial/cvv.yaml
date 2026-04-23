@@ -13,7 +13,7 @@ id: cvv_001
 name: "CVV / CVC / CSC (mã bảo mật thẻ)"
 category: financial
 level: SECRET
-weight: 0.97
+weight: 0.95
 priority: 98
 tags: [financial, cvv, cvc, csc, pci_dss, card_data]
 enabled: true
@@ -21,23 +21,23 @@ enabled: true
 patterns:
   # CVV/CVC/CVV2/CVC2/CSC: label + 3-4 số
   # Ví dụ: CVV: 123, CVC2=456, CSC: 7890
-  - regex: '(?i)(?:CVV2?|CVC2?|CSC|card\s*security\s*code|card\s*verification)\s*[:=\-]?\s*\b\d{3,4}\b'
+  - regex: '(?i)(?:CVV2?|CVC2?|CSC|card\s*security\s*code|card\s*verification)\s*[:=\-]?\s*\d{3,4}\b'
     description: "CVV/CVC/CSC label + 3-4 chữ số (PCI-DSS sensitive)"
     confidence: 0.97
     context_required: false
 
   # iCVV (thẻ chip) — phát hiện trong file log / dump dữ liệu
-  - regex: '(?i)(?:icvv|dynamic\s*cvv|dCVV)\s*[:=\-]?\s*\b\d{3,4}\b'
+  - regex: '(?i)(?:icvv|dynamic\s*cvv|dCVV)\s*[:=\-]?\s*\d{3,4}\b'
     description: "iCVV / Dynamic CVV (thẻ chip)"
     confidence: 0.95
     context_required: false
 
-  # CVV trong context thẻ đầy đủ (cạnh số thẻ + ngày hết hạn)
-  # Detect CVV 3-4 số xuất hiện cùng format "MM/YY" hoặc "MM/YYYY"
-  # Không standalone — cần regex engine check proximity (xử lý bởi compound + context boost)
+  # CVV trong context thẻ đầy đủ — standalone \d{3,4} có FP cực cao.
+  # conf=0.30: 0.30×0.95=0.285, +max_boost=0.30 → 0.585 < 0.60 → luôn bị drop.
+  # Pattern này chỉ tồn tại để CVVExpiryBoost trong credit_card_001 có thể detect.
   - regex: '\b\d{3,4}\b'
-    description: "CVV 3-4 chữ số — chỉ dùng kết hợp với context số thẻ"
-    confidence: 0.55
+    description: "CVV 3-4 chữ số — không tạo match riêng, chỉ hỗ trợ credit_card context"
+    confidence: 0.30
     context_required: true
 
 keywords:

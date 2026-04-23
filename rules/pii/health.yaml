@@ -1,0 +1,96 @@
+# PII — Dữ liệu y tế / sức khỏe
+# NĐ 13/2023/NĐ-CP Điều 2, Khoản 4 — dữ liệu sức khỏe là dữ liệu cá nhân NHẠY CẢM ĐẶC BIỆT.
+# GDPR Article 9 — health data là "special category" — bảo vệ cao nhất.
+# HIPAA (áp dụng khi xử lý dữ liệu bệnh nhân nước ngoài).
+#
+# Rò rỉ dữ liệu y tế: ảnh hưởng nghiêm trọng đến quyền riêng tư, bảo hiểm,
+# việc làm của người bệnh; không thể khắc phục khi đã lộ.
+# → Level: SECRET (L4)
+
+id: health_001
+name: "Dữ liệu y tế / sức khỏe cá nhân"
+category: pii
+level: SECRET
+weight: 0.90
+priority: 85
+tags: [pii, health, medical_record, sensitive_pii, ndctn13]
+enabled: true
+
+patterns:
+  # Bệnh án / Medical record — tài liệu y tế chính thức
+  - regex: '(?i)(?:bệnh\s*án|medical\s*record|hồ\s*sơ\s*bệnh\s*án|patient\s*record|health\s*record)'
+    description: "Bệnh án / Medical record"
+    confidence: 0.88
+    context_required: false
+
+  # Chẩn đoán bệnh — với label rõ ràng
+  - regex: '(?i)(?:chẩn\s*đoán|diagnosis|kết\s*luận\s*khám|kết\s*quả\s*khám)\s*[:=]'
+    description: "Chẩn đoán / Kết luận khám bệnh (có label)"
+    confidence: 0.90
+    context_required: false
+
+  # Kết quả xét nghiệm — với label
+  - regex: '(?i)(?:kết\s*quả\s*xét\s*nghiệm|xét\s*nghiệm|lab\s*result|test\s*result|laboratory)\s*[:=]'
+    description: "Kết quả xét nghiệm (có label)"
+    confidence: 0.88
+    context_required: false
+
+  # Tên bệnh nhạy cảm — HIV, ung thư, tâm thần, tiểu đường v.v.
+  - regex: '(?i)(?:HIV|AIDS|ung\s*thư|cancer|u\s*ác\s*tính|malignant|viêm\s*gan\s*[ABCDE]|hepatitis|lao\s*phổi|tuberculosis|tâm\s*thần|psychiatric|tâm\s*lý\s*học|tiểu\s*đường|diabetes|tim\s*mạch|cardiovascular|đột\s*quỵ|stroke|thận\s*mãn|chronic\s*kidney|suy\s*thận|renal\s*failure)'
+    description: "Tên bệnh nhạy cảm (HIV, ung thư, tâm thần, ...)"
+    confidence: 0.82
+    context_required: true
+
+  # Đơn thuốc / Prescription
+  - regex: '(?i)(?:đơn\s*thuốc|toa\s*thuốc|prescription|thuốc\s*điều\s*trị|medication|dosage|liều\s*dùng)\s*[:=]'
+    description: "Đơn thuốc / Prescription (có label)"
+    confidence: 0.85
+    context_required: false
+
+  # Mã ICD (International Classification of Diseases) — định danh bệnh chuẩn
+  - regex: '\b[A-Z]\d{2}(?:\.\d{1,4})?\b'
+    description: "Mã ICD-10/ICD-11 (vd: C34.1, F32.0) — chỉ dùng với keyword y tế"
+    confidence: 0.70
+    context_required: true
+
+keywords:
+  primary:
+    - "bệnh án"
+    - "y tế"
+    - "sức khỏe"
+    - "medical"
+    - "bệnh nhân"
+    - "patient"
+    - "chẩn đoán"
+    - "diagnosis"
+    - "kết quả xét nghiệm"
+    - "lab result"
+    - "phòng khám"
+    - "bệnh viện"
+    - "hospital"
+    - "clinic"
+    - "health record"
+    - "hồ sơ bệnh án"
+    - "tiền sử bệnh"
+    - "medical history"
+  secondary:
+    - "thuốc"
+    - "điều trị"
+    - "treatment"
+    - "xét nghiệm"
+    - "đơn thuốc"
+    - "prescription"
+    - "bác sĩ"
+    - "doctor"
+    - "phẫu thuật"
+    - "surgery"
+    - "nhập viện"
+    - "xuất viện"
+    - "ICD"
+    - "BHYT"
+    - "bảo hiểm y tế"
+    - "khám bệnh"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true

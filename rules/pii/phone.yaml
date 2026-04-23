@@ -15,8 +15,8 @@
 id: phone_001
 name: "Số điện thoại Việt Nam"
 category: pii
-level: CONFIDENTIAL
-weight: 0.75
+level: INTERNAL
+weight: 0.82
 priority: 55
 tags: [pii, phone, contact_info, vn_specific]
 enabled: true
@@ -68,6 +68,9 @@ keywords:
   secondary:
     - "hotline"
     - "zalo"
+    - "số Zalo"
+    - "Zalo/Viber"
+    - "Viber"
     - "fax"
     - "ext"
     - "số máy lẻ"
@@ -75,6 +78,10 @@ keywords:
     - "cell"
     - "contact"
     - "gọi"
+    - "OTP"
+    - "SMS"
+    - "nhắn tin"
+    - "xác thực số điện thoại"
 
 false_positive_reduction:
   min_context_window: 100

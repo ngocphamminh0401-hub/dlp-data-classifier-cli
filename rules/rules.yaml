@@ -3,23 +3,32 @@
 # Rule có priority cao (credit_card=100, credentials=97) được engine sort lên trước.
 #
 # TỔNG KẾT:
-#   PII      — 6 rules (vn_id, passport, phone, email, dob, vn_name)
-#   Financial— 7 rules (credit_card, bank_account, tax_code, swift_bic, cvv, iban, income)
+#   PII      — 9 rules (vn_id, passport, phone, email, dob, vn_name, health, social_insurance, biometric)
+#   Financial— 8 rules (credit_card, bank_account, tax_code_business, tax_code_personal, swift_bic, cvv, iban, income)
 #   Org      — 8 rules (classified_doc x2, contract, internal_code, internal_ip, credentials, watermark, vnpt_email)
-#   TỔNG     — 21 rules
+#   TỔNG     — 25 rules
 
 includes:
   # ── PII (Thông tin cá nhân — Nghị định 13/2023/NĐ-CP) ─────────────────────
-  # priority: 80 → scan trước email/dob (nhận dạng danh tính cụ thể)
+  # priority: 85 → dữ liệu y tế SECRET (NĐ13/2023, GDPR Art.9)
+  - pii/health.yaml
+
+  # priority: 83 → sinh trắc học SECRET — không thể khắc phục khi lộ
+  - pii/biometric.yaml
+
+  # priority: 80 → CCCD/CMND (nhận dạng danh tính cụ thể)
   - pii/vn_id.yaml
 
-  # priority: 78 → hộ chiếu (ít phổ biến hơn CCCD nhưng vẫn quan trọng)
+  # priority: 78 → hộ chiếu (B+8, P+7, MRZ → SECRET via override_level)
   - pii/passport.yaml
 
-  # priority: 55 → số điện thoại (đặc trưng nhưng ít nguy hiểm hơn danh tính)
+  # priority: 75 → BHXH/BHYT (NĐ13/2023 — dữ liệu tài chính cá nhân)
+  - pii/social_insurance.yaml
+
+  # priority: 55 → số điện thoại (NĐ13/2023 — dữ liệu cơ bản, INTERNAL)
   - pii/phone.yaml
 
-  # priority: 45 → email (low-risk, cần cho compound rule pii+financial)
+  # priority: 45 → email (NĐ13/2023 — dữ liệu cơ bản, INTERNAL)
   - pii/email.yaml
 
   # priority: 35 → ngày sinh (low confidence, hỗ trợ compound rule)
@@ -38,10 +47,13 @@ includes:
   # priority: 70 → số tài khoản NH (CONFIDENTIAL, cần keyword)
   - financial/bank_account.yaml
 
-  # priority: 65 → SWIFT/BIC (CONFIDENTIAL, giao dịch quốc tế)
+  # priority: 65 → SWIFT/BIC (INTERNAL — BIC là mã công khai; SECRET qua compound với IBAN)
   - financial/swift_bic.yaml
 
-  # priority: 60 → mã số thuế (CONFIDENTIAL, cần keyword)
+  # priority: 62 → MST cá nhân 13 số (CONFIDENTIAL — đồng nhất định danh cá nhân)
+  - financial/tax_code_personal.yaml
+
+  # priority: 60 → MST doanh nghiệp (INTERNAL — thông tin công khai theo Luật DN 2020)
   - financial/tax_code.yaml
 
   # priority: 58 → IBAN (CONFIDENTIAL, giao dịch quốc tế)
@@ -60,7 +72,7 @@ includes:
   # priority: 94 → tài liệu mật cấp CONFIDENTIAL (BÍ MẬT / CONFIDENTIAL)
   - org/classified_doc_002.yaml
 
-  # priority: 60 → hợp đồng + mã PO (CONFIDENTIAL)
+  # priority: 60 → hợp đồng + mã PO (CONFIDENTIAL — ISO 27001 A.5.12)
   - org/contract.yaml
 
   # priority: 50 → IP nội bộ (INTERNAL, nâng CONFIDENTIAL nếu có credentials)
@@ -77,44 +89,150 @@ includes:
 
 # ── Compound rules ─────────────────────────────────────────────────────────
 # Kết hợp nhiều category → nâng cấp độ phân loại.
-# Conditions khớp với: category, rule ID prefix, tags đã khai báo.
+# Conditions khớp với: category, ruleID đầy đủ, ruleID prefix, category_prefix.
+# Ví dụ: "vn_id_001" → tags: ["pii", "vn_id_001", "vn_id", "pii_vn_id"]
+#
+# min_component_level: chỉ trigger khi MỖI condition có match ≥ level đó.
+# violation_type: mã vi phạm để trigger workflow riêng (audit log, alert, ticket).
+# alert_priority: mức ưu tiên cảnh báo — CRITICAL | HIGH | MEDIUM.
 compound_rules:
-  # [PII + Financial] → bộ dữ liệu đủ để đánh cắp danh tính + tài khoản
-  - name: "PII + Financial = SECRET"
+
+  # ── CORE PII + FINANCIAL ──────────────────────────────────────────────────
+
+  # [PII nhạy cảm + Financial nhạy cảm] → bộ dữ liệu đủ để đánh cắp danh tính
+  # min_component_level: CONFIDENTIAL tránh false positive:
+  #   email(INTERNAL) + BIC(INTERNAL) → KHÔNG phải SECRET
+  #   CCCD(CONFIDENTIAL) + credit_card(SECRET) → SECRET ✓
+  - name: "PII (sensitive) + Financial (sensitive) = SECRET"
     conditions: [pii, financial]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
 
-  # [Hợp đồng + bất kỳ PII] → tài liệu hợp đồng có thông tin cá nhân
+  # [Hợp đồng + PII] — dùng org_contract (không phải org) để tránh:
+  #   watermark(INTERNAL) + email(INTERNAL) → CONFIDENTIAL (sai)
+  # org_contract: tag từ category("org") + prefix("contract_001" → "contract")
   - name: "Contract + PII = CONFIDENTIAL"
-    conditions: [org, pii]
+    conditions: [org_contract, pii]
     result_level: CONFIDENTIAL
+
+  # ── FULL IDENTITY SETS ────────────────────────────────────────────────────
 
   # [CCCD + Số TK + SĐT] → bộ 3 yếu tố đủ để mở tài khoản gian lận
   - name: "Full identity set (CCCD + phone + bank) = SECRET"
     conditions: [pii_vn_id, pii_phone, financial]
     result_level: SECRET
 
-  # [CCCD + Ngày sinh + Họ tên] → bộ PII cá nhân đầy đủ
+  # [CCCD + Ngày sinh + Họ tên] → quasi-identifier đầy đủ (NIST SP 800-188)
+  # Tag engine tự sinh: category("pii") + "_" + ruleIDPrefix("vn_name_001" → "vn_name")
   - name: "Full PII set (CCCD + DOB + Name) = SECRET"
-    conditions: [pii_vn_id, pii_dob, pii_name]
+    conditions: [pii_vn_id, pii_dob, pii_vn_name]
     result_level: SECRET
 
-  # [Credit card + CVV] → dữ liệu thẻ đầy đủ (PCI-DSS violation nghiêm trọng)
-  - name: "Credit card + CVV = SECRET (PCI-DSS)"
+  # ── PCI-DSS ───────────────────────────────────────────────────────────────
+
+  # [Credit card + CVV] → PCI-DSS Req.3.3.1 — CVV không được lưu trữ
+  # violation_type để trigger compliance workflow (cả 2 đã là SECRET, rule này
+  # không nâng level mà chỉ ghi nhận vi phạm PCI cụ thể)
+  - name: "Credit card + CVV = SECRET (PCI-DSS Req.3.3.1)"
     conditions: [credit_card, cvv]
     result_level: SECRET
+    violation_type: PCI_DSS_3.3.1
+    alert_priority: CRITICAL
+
+  # ── INFRASTRUCTURE ────────────────────────────────────────────────────────
 
   # [Credentials + IP nội bộ] → thông tin đủ để xâm nhập hệ thống nội bộ
   - name: "Credentials + Internal IP = SECRET"
     conditions: [credentials, internal_ip]
     result_level: SECRET
 
-  # [Hợp đồng + Financial] → hợp đồng tài chính
+  # [Hợp đồng + Financial] — dùng org_contract để tránh watermark + credit_card
+  # Engine no-downgrade đảm bảo: nếu credit_card(SECRET) đã match, CONFIDENTIAL bị bỏ qua
   - name: "Contract + Financial = CONFIDENTIAL"
-    conditions: [org, financial]
+    conditions: [org_contract, financial]
     result_level: CONFIDENTIAL
 
-  # [Email VNPT + Tài liệu mật] → tài liệu mật của VNPT
-  - name: "VNPT email + Classified doc = SECRET"
-    conditions: [vnpt_email, classified_doc]
+  # ── VNPT CLASSIFIED DOCS (TÁCH THEO LEVEL) ───────────────────────────────
+
+  # [Email VNPT + Tài liệu TỐI MẬT/MẬT/RESTRICTED] → tài liệu mật nhà nước VNPT
+  # classified_doc_001: ruleID đầy đủ trong tagSet → chỉ match rule SECRET-level
+  - name: "VNPT email + Classified SECRET doc = SECRET"
+    conditions: [vnpt_email, classified_doc_001]
     result_level: SECRET
+
+  # [Email VNPT + Tài liệu BÍ MẬT/CONFIDENTIAL] → tài liệu bí mật thương mại VNPT
+  # classified_doc_002: ruleID đầy đủ → chỉ match rule CONFIDENTIAL-level
+  - name: "VNPT email + Classified CONFIDENTIAL doc = CONFIDENTIAL"
+    conditions: [vnpt_email, classified_doc_002]
+    result_level: CONFIDENTIAL
+
+  # ── PII COMBINATIONS ──────────────────────────────────────────────────────
+
+  # [SĐT + Tài chính] → CONFIDENTIAL (NĐ 13/2023: SĐT là dữ liệu cơ bản)
+  # No-downgrade: nếu financial đã là SECRET từ credit_card, rule này bị bỏ qua
+  - name: "Phone + Financial = CONFIDENTIAL"
+    conditions: [pii_phone, financial]
+    result_level: CONFIDENTIAL
+
+  # [SWIFT BIC + IBAN] → định tuyến + số TK đầy đủ → đủ khởi tạo SEPA transfer
+  # EU PSD2 Art.74: payment initiation data cần mức bảo vệ cao nhất
+  - name: "SWIFT BIC + IBAN = SECRET (PSD2 Art.74)"
+    conditions: [financial_swift_bic, financial_iban]
+    result_level: SECRET
+
+  # [Y tế + Định danh cụ thể] → PHI đầy đủ (HIPAA Safe Harbor §164.514)
+  # Dùng pii_vn_id (cụ thể) thay vì pii (quá rộng — email cũng là pii)
+  - name: "Health + Identity = SECRET (HIPAA PHI)"
+    conditions: [pii_health, pii_vn_id]
+    result_level: SECRET
+    violation_type: HIPAA_PHI
+
+  # [Sinh trắc học + Định danh cụ thể] → không thể thu hồi (NĐ 13/2023, GDPR Art.9)
+  - name: "Biometric + Identity = SECRET (irrecoverable)"
+    conditions: [pii_biometric, pii_vn_id]
+    result_level: SECRET
+    violation_type: BIOMETRIC_IDENTITY_COMBINATION
+
+  # ── 7 COMPOUND RULES MỚI ─────────────────────────────────────────────────
+
+  # T1 — Hộ chiếu + CCCD: đủ để giả mạo danh tính trong + ngoài nước
+  # ICAO Doc 9303, NIST SP 800-63-3 IAL3
+  - name: "Passport + Identity = SECRET (ICAO identity fraud)"
+    conditions: [pii_passport, pii_vn_id]
+    result_level: SECRET
+
+  # T2 — Y tế + Tài chính: gian lận bảo hiểm điển hình (HIPAA, PCI-DSS)
+  - name: "Health + Financial = SECRET (insurance fraud enabler)"
+    conditions: [pii_health, financial]
+    result_level: SECRET
+    violation_type: HEALTH_FINANCIAL_COMBINATION
+
+  # T3 — Sinh trắc học + Tài chính: chiếm đoạt tài khoản không phục hồi
+  # NĐ 13/2023 Điều 2 Khoản 4, GDPR Art.9(1)
+  - name: "Biometric + Financial = Irrecoverable SECRET"
+    conditions: [pii_biometric, financial]
+    result_level: SECRET
+    violation_type: BIOMETRIC_FINANCIAL_COMBINATION
+
+  # T4 — BHXH/BHYT + CCCD: gian lận bảo hiểm xã hội (NĐ 13/2023)
+  - name: "Social Insurance + Identity = SECRET (NĐ13/2023)"
+    conditions: [pii_social_insurance, pii_vn_id]
+    result_level: SECRET
+
+  # T5 — Tổ hợp 3 PII cơ bản: re-identification risk (GDPR Recital 26, NIST SP 800-188)
+  # Email + SĐT + Ngày sinh → đủ để định danh lại người dùng dù từng thành phần là INTERNAL
+  - name: "PII Aggregation (email + phone + DOB) = CONFIDENTIAL"
+    conditions: [pii_email, pii_phone, pii_dob]
+    result_level: CONFIDENTIAL
+
+  # T6 — Credentials + Định danh: account takeover enabler trực tiếp (ISO 27001 A.8.5)
+  - name: "Credentials + Identity = SECRET (account takeover)"
+    conditions: [credentials, pii_vn_id]
+    result_level: SECRET
+    violation_type: ACCOUNT_TAKEOVER_ENABLER
+
+  # T7 — IP nội bộ + Mã nội bộ VNPT: đủ để lập bản đồ hạ tầng (NIST SP 800-82)
+  # org_internal_ip: tag từ category("org") + prefix("internal_ip_001" → "internal_ip")
+  - name: "Internal IP + Internal Code = CONFIDENTIAL (network recon)"
+    conditions: [org_internal_ip, org_internal_code]
+    result_level: CONFIDENTIAL

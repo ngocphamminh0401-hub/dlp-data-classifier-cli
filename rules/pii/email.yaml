@@ -10,7 +10,7 @@ id: email_001
 name: "Địa chỉ email"
 category: pii
 level: INTERNAL
-weight: 0.85
+weight: 0.75
 priority: 45
 tags: [pii, email, contact_info]
 enabled: true
@@ -38,9 +38,24 @@ patterns:
     confidence: 0.88
     context_required: false
 
-keywords: []
+keywords:
+  primary:
+    - "email"
+    - "địa chỉ email"
+    - "hộp thư"
+    - "thư điện tử"
+    - "e-mail"
+  secondary:
+    - "liên hệ"
+    - "liên lạc"
+    - "contact"
+    - "gửi mail"
+    - "inbox"
+    - "địa chỉ thư"
 
 false_positive_reduction:
   min_context_window: 0
-  # Email tự nhận dạng qua ký tự @ — không cần keyword context
+  # Email tự nhận dạng qua ký tự @ — context_required=false trên tất cả pattern
+  # nên rule KHÔNG bị skip dù keywords: [] trước đây.
+  # Keywords được thêm để cải thiện context boost score (0 → +0.15/+0.30).
   exclude_if_no_keywords: false

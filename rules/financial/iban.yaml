@@ -15,7 +15,7 @@ id: iban_001
 name: "Số tài khoản IBAN quốc tế"
 category: financial
 level: CONFIDENTIAL
-weight: 0.83
+weight: 0.87
 priority: 58
 tags: [financial, iban, international_banking, account_number]
 enabled: true

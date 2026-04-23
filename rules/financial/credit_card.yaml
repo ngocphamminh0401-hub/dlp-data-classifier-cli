@@ -24,50 +24,51 @@ enabled: true
 
 patterns:
   # Visa — 16 số bắt đầu bằng 4 (có thể có dấu cách / gạch ngang)
-  - regex: '\b4\d{3}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+  - regex: '\b4\d{3}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
     description: "Visa (bắt đầu bằng 4, 16 số)"
     confidence: 0.95
     context_required: false
     validators: [luhn]
 
   # Mastercard — 51-55xx hoặc 2221-2720 (16 số)
-  - regex: '\b(?:5[1-5]\d{2}|2(?:2[2-9]\d|[3-6]\d{2}|7[01]\d|720))[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+  # IIN 2221 là thấp nhất hợp lệ; 2220 không hợp lệ
+  - regex: '\b(?:5[1-5]\d{2}|2(?:22[1-9]|2[3-9]\d|[3-6]\d{2}|7[01]\d|720))[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
     description: "Mastercard (51-55 và range 2221-2720, 16 số)"
     confidence: 0.95
     context_required: false
     validators: [luhn]
 
   # American Express — 15 số, bắt đầu bằng 34 hoặc 37
-  - regex: '\b3[47]\d{2}[\s\-]?\d{6}[\s\-]?\d{5}\b'
+  - regex: '\b3[47]\d{2}[-\s]?\d{6}[-\s]?\d{5}\b'
     description: "American Express (34, 37 — 15 số)"
     confidence: 0.95
     context_required: false
     validators: [luhn]
 
   # JCB — bắt đầu bằng 35xx (16 số)
-  - regex: '\b35(?:2[89]|[3-8]\d)\d[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+  - regex: '\b35(?:2[89]|[3-8]\d)\d[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
     description: "JCB (35xx — 16 số)"
     confidence: 0.90
     context_required: false
     validators: [luhn]
 
   # Discover — 6011, 622126-622925, 644-649, 65xx (16 số)
-  - regex: '\b(?:6011|64[4-9]\d|65\d{2}|622(?:12[6-9]|1[3-9]\d|[2-8]\d{2}|9[01]\d|92[0-5]))[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+  - regex: '\b(?:6011|64[4-9]\d|65\d{2}|622(?:12[6-9]|1[3-9]\d|[2-8]\d{2}|9[01]\d|92[0-5]))[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
     description: "Discover (6011, 622xxx, 644-649, 65xx — 16 số)"
     confidence: 0.90
     context_required: false
     validators: [luhn]
 
   # Napas VN — thẻ nội địa Việt Nam (9704xx, 16 số)
-  - regex: '\b9704\d{2}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b'
+  - regex: '\b9704\d{2}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b'
     description: "Thẻ nội địa Napas Việt Nam (9704xx — 16 số)"
     confidence: 0.92
     context_required: false
     validators: [luhn]
 
-  # UnionPay — bắt đầu bằng 62xx (16-19 số, phổ biến với thẻ TQ)
-  - regex: '\b62\d{2}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}(?:[\s\-]?\d{3})?\b'
-    description: "UnionPay (62xx — 16-19 số)"
+  # UnionPay — IIN hợp lệ: 624x-626x, 628x (16-19 số, phổ biến với thẻ TQ)
+  - regex: '\b(?:62[4-6]\d|628\d)[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}(?:[-\s]?\d{3})?\b'
+    description: "UnionPay (624x/625x/626x/628x — 16-19 số)"
     confidence: 0.88
     context_required: false
     validators: [luhn]

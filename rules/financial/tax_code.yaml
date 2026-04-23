@@ -1,23 +1,25 @@
-# FIN / PII-006 — Mã số thuế Việt Nam (MST)
+# FIN / ORG — Mã số thuế doanh nghiệp Việt Nam (MST DN)
 # Theo Luật Quản lý Thuế 2019 và Thông tư 105/2020/TT-BTC.
 #
-# CẤU TRÚC MST:
+# PHÂN LOẠI PHÁP LÝ:
+#   MST doanh nghiệp 10 số — CÔNG KHAI (Luật DN 2020 Điều 216, tra cứu được trên
+#   Cổng thông tin quốc gia về ĐKDN). In trên hóa đơn, hợp đồng, hồ sơ thầu.
+#   → Level: INTERNAL (không phải bí mật nhưng cần kiểm soát trong hệ thống)
+#
+# MST cá nhân 13 số → xem tax_code_personal.yaml (CONFIDENTIAL).
+#
+# CẤU TRÚC MST DN:
 #   Doanh nghiệp:   10 số (vd: 0100100000)
 #   Chi nhánh:      10 số + gạch ngang + 3 số (vd: 0100100000-001)
-#   Cá nhân:        13 số  — từ 2021 đồng nhất với số định danh cá nhân (CCCD)
-#   Hộ kinh doanh:  10 số (giống doanh nghiệp) + hậu tố riêng
-#
-# Lưu ý: MST 10 số dễ nhầm với số CCCD cũ (9 số+padding) hoặc số tài khoản.
-# MST 13 số dễ nhầm với CCCD 12 số + padding.
-# BẮT BUỘC keyword "mã số thuế", "MST", "tax" để phân biệt.
+#   Hộ kinh doanh:  10 số + hậu tố riêng
 
-id: tax_code_001
-name: "Mã số thuế Việt Nam (doanh nghiệp và cá nhân)"
+id: tax_code_business_001
+name: "Mã số thuế doanh nghiệp / chi nhánh Việt Nam"
 category: financial
-level: CONFIDENTIAL
-weight: 0.85
+level: INTERNAL
+weight: 0.75
 priority: 60
-tags: [financial, tax_code, business_id, pii_tax]
+tags: [financial, tax_code, business_id, org_identifier]
 enabled: true
 
 patterns:
@@ -30,19 +32,13 @@ patterns:
   # MST doanh nghiệp: 10 số (2 số đầu là mã tỉnh: 01-96)
   - regex: '\b(?:0[1-9]|[1-8]\d|9[0-6])\d{8}\b'
     description: "MST doanh nghiệp 10 số (2 số đầu là mã tỉnh/thành)"
-    confidence: 0.82
-    context_required: true
-
-  # MST cá nhân: 13 số (từ 2021 — đồng nhất với CCCD)
-  - regex: '\b\d{13}\b'
-    description: "MST cá nhân 13 số (từ 2021, đồng nhất với số định danh)"
     confidence: 0.78
     context_required: true
 
   # MST tổng quát 10 số (dự phòng, confidence thấp)
   - regex: '\b\d{10}\b'
-    description: "MST 10 số (dự phòng — yêu cầu keyword bắt buộc)"
-    confidence: 0.70
+    description: "MST 10 số dự phòng — yêu cầu keyword bắt buộc"
+    confidence: 0.65
     context_required: true
 
 keywords:
@@ -56,19 +52,23 @@ keywords:
     - "MSDN"
     - "đăng ký kinh doanh"
     - "tax identification"
-    - "mã số cá nhân"
+    - "mã số kinh doanh"
+    - "business registration number"
+    - "Tax No"
+    - "Tax ID"
   secondary:
     - "cục thuế"
     - "chi cục thuế"
     - "hóa đơn"
     - "VAT"
     - "GTGT"
-    - "thuế thu nhập"
-    - "TNCN"
+    - "thuế thu nhập doanh nghiệp"
     - "TNDN"
     - "kê khai thuế"
     - "quyết toán thuế"
     - "hoàn thuế"
+    - "giấy phép kinh doanh"
+    - "giấy chứng nhận đăng ký"
 
 false_positive_reduction:
   min_context_window: 200

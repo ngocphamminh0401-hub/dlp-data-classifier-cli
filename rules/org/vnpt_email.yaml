@@ -25,8 +25,8 @@ tags: [org, vnpt_email, internal_email, org_identifier]
 enabled: true
 
 patterns:
-  - regex: '\b[A-Za-z0-9._%+\-]+@(?:vnpt\.vn|vnpt-i\.vn|vnptit\.vn|vinaphone\.vn|vnpttechnology\.vn)\b'
-    description: "ORG-002 theo spec PDF"
+  - regex: '\b[A-Za-z0-9._%+\-]+@(?:vnpt\.vn|vnpt-i\.vn|vnptit\.vn|vinaphone\.vn|vnpttechnology\.vn|vnpt-net\.vn|vnptmedia\.vn)\b'
+    description: "ORG-002 email nội bộ VNPT (đầy đủ domain)"
     confidence: 0.95
     context_required: false
 
@@ -36,7 +36,13 @@ keywords:
     - "@vnpt.vn"
     - "@vnpt-i.vn"
     - "@vinaphone.vn"
+    - "@vnpt-net.vn"
+    - "@vnptmedia.vn"
     - "email nội bộ"
+    - "vnpt-net"
+    - "vnptmedia"
+    - "vnpt media"
+    - "vnpt net"
   secondary:
     - "nhân viên VNPT"
     - "cán bộ VNPT"
@@ -44,6 +50,9 @@ keywords:
     - "tập đoàn VNPT"
     - "VinaPhone"
     - "VNPT-I"
+    - "VNPT Technology"
+    - "VNPT Net"
+    - "VNPT Media"
 
 false_positive_reduction:
   min_context_window: 0

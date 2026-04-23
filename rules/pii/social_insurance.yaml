@@ -1,0 +1,72 @@
+# PII — Số bảo hiểm xã hội / bảo hiểm y tế (BHXH / BHYT)
+# NĐ 13/2023/NĐ-CP Điều 2, Khoản 4 — dữ liệu tài chính cá nhân (thông tin BHXH).
+# Luật BHXH 2014 — số BHXH là định danh cá nhân trong hệ thống bảo hiểm quốc gia.
+#
+# Số BHXH: 10 chữ số — cấp bởi BHXH Việt Nam, liên kết với MST cá nhân từ 2021.
+# Số thẻ BHYT: BH + 13 ký tự — hoặc dạng cũ (thay đổi theo từng giai đoạn).
+#
+# FP risk cao (10 số trùng với MST DN và số TK ngắn) — BẮT BUỘC keyword.
+
+id: social_insurance_001
+name: "Số BHXH / BHYT / Bảo hiểm xã hội"
+category: pii
+level: CONFIDENTIAL
+weight: 0.88
+priority: 75
+tags: [pii, social_insurance, bhxh, bhyt, financial_pii, ndctn13]
+enabled: true
+
+patterns:
+  # Số BHXH có label rõ ràng — "BHXH: 1234567890"
+  - regex: '(?i)(?:BHXH|bảo\s*hiểm\s*xã\s*hội|social\s*insurance)\s*(?:số|number|no\.?|#|:)?\s*[:=]?\s*\d{10}'
+    description: "Số BHXH 10 chữ số với label"
+    confidence: 0.93
+    context_required: false
+
+  # Số thẻ BHYT — bắt đầu bằng BH + 13 ký tự alphanum
+  - regex: '\bBH[A-Z0-9]{13}\b'
+    description: "Số thẻ BHYT (BH + 13 ký tự)"
+    confidence: 0.90
+    context_required: false
+
+  # Số BHYT cũ (HN, HCM... + mã)
+  - regex: '(?i)(?:BHYT|bảo\s*hiểm\s*y\s*tế|health\s*insurance)\s*(?:số|number|no\.?|#|:)?\s*[:=]?\s*[A-Z0-9]{10,15}'
+    description: "Số thẻ BHYT với label"
+    confidence: 0.90
+    context_required: false
+
+  # Số BHXH standalone 10 số — chỉ với keyword bắt buộc
+  - regex: '\b\d{10}\b'
+    description: "Số BHXH 10 chữ số (context_required — nhiều FP nếu không có keyword)"
+    confidence: 0.68
+    context_required: true
+
+keywords:
+  primary:
+    - "BHXH"
+    - "BHYT"
+    - "bảo hiểm xã hội"
+    - "bảo hiểm y tế"
+    - "social insurance"
+    - "health insurance"
+    - "sổ BHXH"
+    - "thẻ BHYT"
+    - "số BHXH"
+    - "số thẻ BHYT"
+    - "social security"
+  secondary:
+    - "lương hưu"
+    - "thai sản"
+    - "ốm đau"
+    - "tai nạn lao động"
+    - "hưu trí"
+    - "tử tuất"
+    - "BHXH tự nguyện"
+    - "đóng bảo hiểm"
+    - "mức đóng"
+    - "bảo hiểm thất nghiệp"
+    - "phòng lao động"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true

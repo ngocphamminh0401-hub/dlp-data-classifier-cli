@@ -10,7 +10,7 @@ id: watermark_001
 name: "Watermark nội bộ / nhãn lưu hành hạn chế"
 category: org
 level: INTERNAL
-weight: 0.85
+weight: 0.80
 priority: 45
 tags: [org, watermark, internal_label, distribution_control]
 enabled: true

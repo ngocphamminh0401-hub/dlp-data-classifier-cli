@@ -9,26 +9,26 @@ id: dob_001
 name: "Ngày tháng năm sinh"
 category: pii
 level: INTERNAL
-weight: 0.60
+weight: 0.72
 priority: 35
 tags: [pii, date_of_birth, pii_dob, temporal]
 enabled: true
 
 patterns:
   # DD/MM/YYYY — định dạng Việt Nam phổ biến nhất
-  - regex: '\b(?:0?[1-9]|[12]\d|3[01])[/\-.](?:0?[1-9]|1[0-2])[/\-.]\d{4}\b'
+  - regex: '\b(?:0?[1-9]|[12]\d|3[01])[-/.](?:0?[1-9]|1[0-2])[-/.]\d{4}\b'
     description: "DD/MM/YYYY hoặc D/M/YYYY (định dạng Việt Nam)"
     confidence: 0.65
     context_required: true
 
   # YYYY-MM-DD — ISO 8601, dùng trong hệ thống / database
-  - regex: '\b\d{4}[/\-.](?:0[1-9]|1[0-2])[/\-.](?:0[1-9]|[12]\d|3[01])\b'
+  - regex: '\b\d{4}[-/.](?:0[1-9]|1[0-2])[-/.](?:0[1-9]|[12]\d|3[01])\b'
     description: "YYYY-MM-DD (ISO 8601 — dùng trong database, API)"
     confidence: 0.70
     context_required: true
 
   # MM/DD/YYYY — định dạng Mỹ (thường gặp trong tài liệu quốc tế)
-  - regex: '\b(?:0?[1-9]|1[0-2])[/\-](?:0?[1-9]|[12]\d|3[01])[/\-]\d{4}\b'
+  - regex: '\b(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])[-/]\d{4}\b'
     description: "MM/DD/YYYY (định dạng Mỹ)"
     confidence: 0.60
     context_required: true
@@ -67,7 +67,10 @@ keywords:
     - "giấy khai sinh"
     - "birth certificate"
     - "ngày sinh nhật"
-    - "hồ sơ"
+    - "hồ sơ cá nhân"
+    - "hồ sơ nhân sự"
+    - "lý lịch"
+    - "thông tin cá nhân"
 
 false_positive_reduction:
   min_context_window: 150

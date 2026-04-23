@@ -116,6 +116,15 @@ func New(rs *RuleSet, cfg EngineConfig) *Engine {
 
 // ─── ScanOutput ───────────────────────────────────────────────────────────────
 
+// CompoundViolation là một compound rule đã được kích hoạt với violation_type.
+// Dùng để trigger workflow xử lý riêng (compliance alert, ticket, notification).
+type CompoundViolation struct {
+	Name          string              // Tên compound rule
+	ResultLevel   ClassificationLevel // Level kết quả của rule này
+	ViolationType string              // Mã vi phạm (vd: "PCI_DSS_3.3.1")
+	AlertPriority string              // "CRITICAL" | "HIGH" | "MEDIUM"
+}
+
 // ScanOutput là kết quả của Engine.Scan().
 type ScanOutput struct {
 	// Matches là tất cả RuleMatch vượt ngưỡng confidence.
@@ -128,6 +137,11 @@ type ScanOutput struct {
 	// FastFailed = true nếu scan dừng sớm do gặp match SECRET (khi FastFail=true).
 	// Trong trường hợp này, Matches có thể không đầy đủ.
 	FastFailed bool
+
+	// CompoundViolations là danh sách compound rule đã trigger với violation_type.
+	// Chỉ có giá trị khi compound rule có trường violation_type != "".
+	// Dùng để audit log và phân loại vi phạm theo chuẩn (PCI-DSS, HIPAA, ...).
+	CompoundViolations []CompoundViolation
 }
 
 // ─── Scan ─────────────────────────────────────────────────────────────────────
@@ -207,50 +221,106 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 	// ── Step 6: Compound rules ────────────────────────────────────────────
 	// Đọc từ YAML compound_rules — không hardcode trong Go code.
 	// Ví dụ: [pii + financial] → SECRET; [org + pii] → CONFIDENTIAL
+	var compoundViolations []CompoundViolation
 	if !fastFailed && len(allMatches) > 0 {
-		finalLevel = e.applyCompoundRules(allMatches, finalLevel)
+		finalLevel, compoundViolations = e.applyCompoundRules(allMatches, finalLevel)
 	}
 
 	return ScanOutput{
-		Matches:    allMatches,
-		FinalLevel: finalLevel,
-		FastFailed: fastFailed,
+		Matches:            allMatches,
+		FinalLevel:         finalLevel,
+		FastFailed:         fastFailed,
+		CompoundViolations: compoundViolations,
 	}
 }
 
 // ─── Compound rules ───────────────────────────────────────────────────────────
 
-// applyCompoundRules đánh giá tất cả compound rules và trả về level cao nhất.
+// applyCompoundRules đánh giá tất cả compound rules và trả về level cao nhất
+// cùng danh sách violation đã kích hoạt (chỉ những rule có violation_type).
 //
 // Compound rule kích hoạt khi TẤT CẢ điều kiện trong conditions đều được thỏa mãn.
 // Mỗi điều kiện được so sánh với:
 //   - Category của match (vd: "pii", "financial")
 //   - Rule ID prefix (vd: "vn_id" từ rule "vn_id_001")
 //   - Tổ hợp category_prefix (vd: "pii_vn_id")
+//   - Rule ID đầy đủ (vd: "classified_doc_001")
+//
+// Nguyên tắc No-Downgrade được đảm bảo ngầm: engine chỉ cập nhật maxLevel
+// khi cr.ResultLevel > maxLevel; compound không bao giờ giảm cấp đã đạt.
 //
 // Ví dụ từ rules.yaml:
 //
-//	conditions: [pii, financial]    → thỏa khi có match trong cả 2 nhóm
-//	conditions: [pii_vn_id, pii_phone, pii_dob]  → thỏa khi có đủ 3 loại PII
-func (e *Engine) applyCompoundRules(matches []RuleMatch, current ClassificationLevel) ClassificationLevel {
+//	conditions: [pii, financial], min_component_level: CONFIDENTIAL
+//	  → chỉ thỏa khi có match pii ≥ L3 VÀ financial ≥ L3 (tránh email+BIC → SECRET)
+//	conditions: [pii_vn_id, pii_phone, pii_dob]
+//	  → thỏa khi có đủ 3 loại PII cụ thể
+func (e *Engine) applyCompoundRules(matches []RuleMatch, current ClassificationLevel) (ClassificationLevel, []CompoundViolation) {
 	if len(e.compound) == 0 {
-		return current
+		return current, nil
 	}
 
-	// Xây dựng set category + tags từ tất cả matches.
-	// Set dùng map[string]bool để O(1) lookup trong compound condition check.
 	tags := buildTagSet(matches)
+	tagLevels := buildTagLevelMap(matches)
 
 	maxLevel := current
+	var violations []CompoundViolation
+
 	for _, cr := range e.compound {
-		if cr.ResultLevel <= maxLevel {
-			continue // level này không nâng được thêm
+		// Bỏ qua nếu rule không tăng level VÀ không có violation_type để ghi nhận.
+		// Tối ưu hot path: tránh evaluate conditions không cần thiết.
+		if cr.ResultLevel <= maxLevel && cr.ViolationType == "" {
+			continue
 		}
-		if compoundSatisfied(cr.Conditions, tags) && cr.ResultLevel > maxLevel {
+		if !compoundSatisfied(cr.Conditions, tags) {
+			continue
+		}
+		// min_component_level: MỖI condition phải có match ở level >= ngưỡng.
+		// Tránh false positive: email(INTERNAL) + BIC(INTERNAL) không trigger SECRET.
+		if cr.MinComponentLevel > 0 && !compoundMinLevelSatisfied(cr.Conditions, tagLevels, cr.MinComponentLevel) {
+			continue
+		}
+
+		if cr.ResultLevel > maxLevel {
 			maxLevel = cr.ResultLevel
 		}
+		if cr.ViolationType != "" {
+			violations = append(violations, CompoundViolation{
+				Name:          cr.Name,
+				ResultLevel:   cr.ResultLevel,
+				ViolationType: cr.ViolationType,
+				AlertPriority: cr.AlertPriority,
+			})
+		}
 	}
-	return maxLevel
+	return maxLevel, violations
+}
+
+// buildTagLevelMap maps mỗi tag đến level cao nhất của match tương ứng.
+// Dùng để kiểm tra min_component_level constraint trong compound rules.
+func buildTagLevelMap(matches []RuleMatch) map[string]ClassificationLevel {
+	m := make(map[string]ClassificationLevel, len(matches)*4)
+	for _, match := range matches {
+		prefix := ruleIDPrefix(match.RuleID)
+		catPrefix := match.Category + "_" + prefix
+		for _, tag := range [4]string{match.Category, match.RuleID, prefix, catPrefix} {
+			if match.Level > m[tag] {
+				m[tag] = match.Level
+			}
+		}
+	}
+	return m
+}
+
+// compoundMinLevelSatisfied trả về true nếu MỌI condition có ít nhất một match
+// ở level >= minLevel. Đây là điều kiện cần thêm bên cạnh compoundSatisfied.
+func compoundMinLevelSatisfied(conditions []string, tagLevels map[string]ClassificationLevel, minLevel ClassificationLevel) bool {
+	for _, cond := range conditions {
+		if tagLevels[cond] < minLevel {
+			return false
+		}
+	}
+	return true
 }
 
 // buildTagSet xây dựng tập hợp tag từ danh sách match và rule definition.

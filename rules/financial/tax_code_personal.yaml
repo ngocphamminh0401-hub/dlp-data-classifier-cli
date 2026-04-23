@@ -1,0 +1,57 @@
+# FIN / PII — Mã số thuế cá nhân Việt Nam (MST CN)
+# Theo NĐ 13/2023/NĐ-CP Điều 2, Khoản 4 và Thông tư 105/2020/TT-BTC.
+#
+# PHÂN LOẠI PHÁP LÝ:
+#   MST cá nhân 13 số (từ 2021) — đồng nhất với số định danh cá nhân (CCCD/CMND).
+#   Đây là dữ liệu cá nhân nhạy cảm theo NĐ 13/2023 Điều 2 Khoản 4.
+#   → Level: CONFIDENTIAL
+#
+# CẤU TRÚC:
+#   13 số — từ 2021, tích hợp với số CCCD (12 số + check digit hoặc mở rộng)
+#   Lưu ý: Dễ nhầm với CCCD 12 số+padding — BẮT BUỘC keyword "MST cá nhân" / "TNCN".
+
+id: tax_code_personal_001
+name: "Mã số thuế cá nhân Việt Nam (13 số)"
+category: financial
+level: CONFIDENTIAL
+weight: 0.85
+priority: 62
+tags: [financial, tax_code, pii_tax, personal_id]
+enabled: true
+
+patterns:
+  # MST cá nhân: 13 số (từ 2021 — đồng nhất với số định danh cá nhân)
+  - regex: '\b\d{13}\b'
+    description: "MST cá nhân 13 số (từ 2021, đồng nhất với số định danh)"
+    confidence: 0.78
+    context_required: true
+
+  # MST cá nhân tích hợp keyword — format "MST: 1234567890123"
+  - regex: '(?i)(?:mã\s*số\s*thuế\s*cá\s*nhân|MST\s*cá\s*nhân|TNCN\s*số|mã\s*số\s*cá\s*nhân)\s*[:=]?\s*\d{13}'
+    description: "MST cá nhân có label rõ ràng"
+    confidence: 0.92
+    context_required: false
+
+keywords:
+  primary:
+    - "mã số thuế cá nhân"
+    - "MST cá nhân"
+    - "mã số cá nhân"
+    - "tax identification number"
+    - "TIN cá nhân"
+    - "TNCN"
+    - "thuế thu nhập cá nhân"
+    - "personal income tax"
+    - "personal tax"
+  secondary:
+    - "cục thuế"
+    - "quyết toán thuế"
+    - "kê khai thuế"
+    - "hoàn thuế TNCN"
+    - "phiếu lương"
+    - "thu nhập chịu thuế"
+    - "khấu trừ thuế"
+
+false_positive_reduction:
+  min_context_window: 200
+  exclude_if_no_keywords: true

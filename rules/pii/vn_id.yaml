@@ -17,15 +17,15 @@ tags: [pii, identity, pii_vn_id, vn_specific]
 enabled: true
 
 patterns:
-  # CCCD 12 số — word boundary chặt để tránh khớp trong dãy số dài hơn
-  - regex: '(?:^|[^\d])\b(\d{12})\b(?:[^\d]|$)'
-    description: "CCCD 12 chữ số (từ 2012) — có word boundary"
+  # CCCD 12 số — \b là zero-width, không consuming; tránh miss consecutive numbers
+  - regex: '\b(\d{12})\b'
+    description: "CCCD 12 chữ số (từ 2012) — word boundary"
     confidence: 0.85
     context_required: true
     validators: [vn_cccd_prefix]
 
   # CMND 9 số — confidence thấp hơn vì 9 số dễ bị nhầm hơn
-  - regex: '(?:^|[^\d])\b(\d{9})\b(?:[^\d]|$)'
+  - regex: '\b(\d{9})\b'
     description: "CMND 9 chữ số (trước 2012)"
     confidence: 0.70
     context_required: true
@@ -48,6 +48,11 @@ keywords:
     - "số định danh quốc gia"
     - "căn cước công dân"
     - "chứng minh thư"
+    - "số CCCD"
+    - "CMND/CCCD"
+    - "thẻ căn cước"
+    - "VNeID"
+    - "định danh điện tử"
   secondary:
     - "identity"
     - "ID number"
@@ -59,6 +64,9 @@ keywords:
     - "quê quán"
     - "hộ khẩu thường trú"
     - "nơi thường trú"
+    - "mã định danh"
+    - "căn cước gắn chip"
+    - "eID"
 
 false_positive_reduction:
   min_context_window: 200
@@ -71,4 +79,10 @@ escalation:
     - "thẻ tín dụng"
     - "mật khẩu"
     - "password"
+    - "ngày sinh"
+    - "họ và tên"
+    - "địa chỉ"
+    - "sinh trắc học"
+    - "biometric"
+    - "vân tay"
   escalate_to: SECRET

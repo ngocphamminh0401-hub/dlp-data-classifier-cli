@@ -6,7 +6,7 @@
 id: contract_001
 name: "ORG-003 Mã số hợp đồng / PO"
 category: org
-level: INTERNAL
+level: CONFIDENTIAL
 weight: 0.78
 priority: 60
 tags: [org, contract, nda, agreement, purchase_order]

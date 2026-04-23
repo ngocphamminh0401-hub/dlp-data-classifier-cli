@@ -32,7 +32,7 @@
 //
 //	score = pattern.Confidence × rule.Weight
 //	score += distanceWeightedBoost(kwHits, matchStart, matchEnd, window)  // tối đa +0.30
-//	if validator_pass: score = max(score, 0.99)
+//	if validator_pass: score = min(score + 0.12, 0.99)  // additive, giữ relative ranking
 //	if no_keywords AND context_required: skip
 //	if cvv_expiry_near: score += FPReduction.CVVExpiryBoost
 //	score = clamp(score, 0.0, 1.0)
@@ -120,7 +120,10 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 					continue // false positive đã bị lọc bởi thuật toán (vd: số thẻ sai Luhn)
 				}
 				if enforced && passed {
-					score = clamp01(maxF(score, 0.99)) // validator xác nhận → confidence rất cao
+					// Additive boost thay vì hard override — giữ relative ranking giữa các IIN.
+					// Visa/Napas đã có base cao → vẫn đạt 0.99; UnionPay (IIN rộng hơn)
+					// dừng ở ~0.96, phản ánh đúng FP risk cao hơn.
+					score = minF(score+0.12, 0.99)
 				}
 			}
 
