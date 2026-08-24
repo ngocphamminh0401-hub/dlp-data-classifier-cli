@@ -97,6 +97,50 @@ type Escalation struct {
 	EscalateTo string   `yaml:"escalate_to"`
 }
 
+// LevelGate yêu cầu bằng chứng thứ 2 ("corroboration") trước khi giữ nguyên
+// level của rule khi level đó KHÔNG được validator xác nhận (Luhn, CCCD prefix...).
+//
+// Vấn đề chống: "highest-sensitivity-wins" (Lớp 3 của Engine.Scan) mặc định để
+// 1 match SECRET đơn lẻ, không validator, không lặp lại quyết định toàn bộ file
+// là SECRET — dù bằng chứng chỉ là 1 lần nhắc đến từ khóa (vd: "TỐI MẬT" xuất
+// hiện trong tài liệu chính sách nói VỀ phân loại, không phải tài liệu chứa nội
+// dung mật thật). Rule càng dùng keyword/regex thuần (không validator) ở level
+// cao càng dễ dính lỗi này.
+//
+// Corroboration coi là đủ nếu MỘT trong các điều kiện sau đúng (trong cùng 1 chunk):
+//  1. Có match của CHÍNH rule này đã qua validator (Validated=true).
+//  2. Rule này khớp ≥2 lần trong chunk (không còn là "1 lần nhắc đến" đơn lẻ).
+//  3. Có match từ rule KHÁC trong cùng chunk đạt level ≥ CONFIDENTIAL (file không
+//     "chỉ có duy nhất tín hiệu này" — có bằng chứng độc lập khác hỗ trợ).
+//
+// Không đủ corroboration → level của match bị hạ về FallbackLevel.
+//
+// Rule KHÔNG nên bật cờ này nếu 1 match đơn lẻ ĐÃ LÀ rủi ro thật dù không lặp lại
+// (vd: credentials_001 — một API key thật rò rỉ 1 lần vẫn là sự cố nghiêm trọng).
+type LevelGate struct {
+	RequireCorroboration bool   `yaml:"require_corroboration"`
+	FallbackLevel        string `yaml:"fallback_level"`
+	ParsedFallbackLevel  ClassificationLevel
+}
+
+// VolumeThreshold là một bậc trong volume escalation: khi số match của rule
+// trong CÙNG MỘT FILE đạt MinCount, level được nâng lên EscalateTo.
+type VolumeThreshold struct {
+	MinCount    int    `yaml:"min_count"`
+	EscalateTo  string `yaml:"escalate_to"`
+	ParsedLevel ClassificationLevel
+}
+
+// VolumeEscalation nâng cấp độ phân loại dựa trên SỐ LẦN một rule khớp trong
+// toàn bộ file — phản ánh rủi ro lộ lọt hàng loạt (vd: 500 email trong 1 file
+// nghiêm trọng hơn 1 email lẻ), tách biệt với confidence của từng match riêng lẻ.
+//
+// Thresholds nên khai theo thứ tự MinCount tăng dần trong YAML; engine tự sort
+// lại lúc load nên thứ tự trong file không bắt buộc.
+type VolumeEscalation struct {
+	Thresholds []VolumeThreshold `yaml:"thresholds"`
+}
+
 // Rule is a loaded and compiled classification rule.
 type Rule struct {
 	ID           string        `yaml:"id"`
@@ -110,6 +154,14 @@ type Rule struct {
 	KeywordLogic KeywordLogic  `yaml:"keyword_logic"`
 	FPReduction  FPReduction   `yaml:"false_positive_reduction"`
 	Escalation   Escalation    `yaml:"escalation"`
+
+	// VolumeEscalation nâng level theo số lần rule khớp trong toàn file.
+	// Rỗng = tắt (mặc định) — không thay đổi hành vi hiện có.
+	VolumeEscalation VolumeEscalation `yaml:"volume_escalation"`
+
+	// LevelGate hạ level nếu match không có bằng chứng thứ 2 hỗ trợ.
+	// RequireCorroboration=false (mặc định) = tắt — không thay đổi hành vi hiện có.
+	LevelGate LevelGate `yaml:"level_gate"`
 
 	// Priority xác định thứ tự đánh giá rule (cao hơn = đánh giá trước).
 	// Rule có priority cao hơn được kích hoạt fast-fail sớm hơn.
@@ -137,6 +189,18 @@ type CompoundRule struct {
 	// 0 = không ràng buộc (mọi level đều kích hoạt).
 	MinComponentLevel ClassificationLevel
 
+	// ContextConditions: tag PHẢI CÓ MẶT (bất kể level) — kiểm tra RIÊNG,
+	// KHÔNG bị ràng buộc bởi MinComponentLevel (vốn áp dụng chung cho toàn
+	// bộ Conditions, không hỗ trợ ngưỡng riêng từng điều kiện — xem
+	// rules.yaml phần compound "Ethnicity/Religion + X + HR Context").
+	// Dùng khi cần 1 điều kiện "thu hẹp phạm vi domain" mà KHÔNG muốn nó bị
+	// đòi hỏi cùng ngưỡng level cao như các điều kiện chính (VD: rule
+	// catch-all yếu như hr_internal_business_001 thường bị gate hạ xuống
+	// PUBLIC/INTERNAL, không bao giờ đạt CONFIDENTIAL — nếu nhét vào
+	// Conditions cùng MinComponentLevel:CONFIDENTIAL sẽ vô hiệu hóa hoàn
+	// toàn vai trò "đánh dấu đây là tài liệu HR" của nó).
+	ContextConditions []string
+
 	// ViolationType là mã vi phạm quy định để trigger workflow riêng
 	// (ví dụ: "PCI_DSS_3.3.1", "HIPAA_PHI", "ACCOUNT_TAKEOVER_ENABLER").
 	// Rỗng = không có violation type đặc biệt.
@@ -157,6 +221,7 @@ type masterIndex struct {
 	Compound []struct {
 		Name              string   `yaml:"name"`
 		Conditions        []string `yaml:"conditions"`
+		ContextConditions []string `yaml:"context_conditions"`
 		ResultLevel       string   `yaml:"result_level"`
 		MinComponentLevel string   `yaml:"min_component_level"`
 		ViolationType     string   `yaml:"violation_type"`
@@ -193,6 +258,7 @@ func LoadRuleSet(dir string) (*RuleSet, error) {
 		rs.CompoundRules = append(rs.CompoundRules, CompoundRule{
 			Name:              cr.Name,
 			Conditions:        cr.Conditions,
+			ContextConditions: cr.ContextConditions,
 			ResultLevel:       ParseLevel(cr.ResultLevel),
 			MinComponentLevel: ParseLevel(cr.MinComponentLevel),
 			ViolationType:     cr.ViolationType,
@@ -219,6 +285,17 @@ func loadRule(path string) (*Rule, error) {
 		return nil, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	r.ParsedLevel = ParseLevel(r.Level)
+
+	for i := range r.VolumeEscalation.Thresholds {
+		r.VolumeEscalation.Thresholds[i].ParsedLevel = ParseLevel(r.VolumeEscalation.Thresholds[i].EscalateTo)
+	}
+	sort.SliceStable(r.VolumeEscalation.Thresholds, func(i, j int) bool {
+		return r.VolumeEscalation.Thresholds[i].MinCount < r.VolumeEscalation.Thresholds[j].MinCount
+	})
+
+	if r.LevelGate.RequireCorroboration {
+		r.LevelGate.ParsedFallbackLevel = ParseLevel(r.LevelGate.FallbackLevel)
+	}
 
 	for i := range r.Patterns {
 		compiled, err := regexp.Compile(r.Patterns[i].Regex)

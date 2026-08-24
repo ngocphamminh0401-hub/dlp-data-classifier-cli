@@ -22,6 +22,21 @@ patterns:
     confidence: 0.93
     context_required: false
 
+  # "Lưu hành nội bộ" KHÔNG có "chỉ" đứng trước — thực tế văn bản hay ghi
+  # "(Lưu hành nội bộ - Chưa công bố)" ngay dưới tiêu đề mà không có "chỉ".
+  # Trước đây bị bỏ sót hoàn toàn (chỉ ORG-006a match, yêu cầu đúng "chỉ lưu
+  # hành nội bộ") khiến nhiều báo cáo tự khai báo rõ ràng vẫn bị chấm PUBLIC.
+  - regex: '(?i)lưu\s*hành\s*nội\s*bộ'
+    description: "ORG-006a2 lưu hành nội bộ (không bắt buộc có 'chỉ')"
+    confidence: 0.90
+    context_required: false
+
+  # "Chưa công bố" đi kèm nội bộ — nhãn tự khai báo tài liệu chưa công khai
+  - regex: '(?i)chưa\s*công\s*bố'
+    description: "ORG-006g chưa công bố"
+    confidence: 0.75
+    context_required: true
+
   # Nhãn "Phân loại: INTERNAL" hoặc "Phân loại: NỘI BỘ" — rất đặc trưng
   - regex: '(?i)(?:phân\s*loại|classification|label)\s*[:=—\-]\s*(?:INTERNAL|NỘI\s*BỘ)\b'
     description: "ORG-006b INTERNAL/NỘI BỘ sau nhãn phân loại"
@@ -40,9 +55,16 @@ patterns:
     confidence: 0.92
     context_required: false
 
-  # Không phổ biến ra ngoài / không phát hành ra ngoài
-  - regex: '(?i)không\s*(?:phổ\s*biến|phát\s*hành)\s*ra\s*ngoài'
-    description: "ORG-006e không phổ biến/phát hành ra ngoài"
+  # Không/nghiêm cấm phổ biến/phát hành/chia sẻ/công bố ra ngoài — MỞ RỘNG
+  # thêm "chia sẻ"/"công bố", cho phép "bên ngoài" (không chỉ "ngoài" trơn),
+  # và thêm "nghiêm cấm" làm từ phủ định thay thế: xác nhận qua ins_int_00152
+  # .docx ("không chia sẻ ra bên ngoài") và health_int_00006.docx
+  # (healthcare__internal — "Dữ liệu chỉ phục vụ mục đích nội bộ, nghiêm cấm
+  # chia sẻ ra ngoài phạm vi bệnh viện") rằng ghi chú tự khai phổ biến có
+  # nhiều biến thể từ phủ định ("không" hoặc "nghiêm cấm") mà bản gốc chỉ
+  # chấp nhận "không" nên bỏ sót "nghiêm cấm".
+  - regex: '(?i)(?:không|nghiêm\s*cấm)\s*(?:phổ\s*biến|phát\s*hành|chia\s*sẻ|công\s*bố)\s*ra\s*(?:ngoài|bên\s*ngoài)'
+    description: "ORG-006e không/nghiêm cấm phổ biến/phát hành/chia sẻ/công bố ra ngoài"
     confidence: 0.88
     context_required: false
 
@@ -61,9 +83,11 @@ keywords:
     - "chỉ lưu hành nội bộ"
     - "không phổ biến"
     - "không phổ biến ra ngoài"
+    - "không chia sẻ ra bên ngoài"
     - "do not distribute"
     - "hạn chế phổ biến"
     - "hạn chế lưu hành"
+    - "chưa công bố"
   secondary:
     - "bảo mật"
     - "hạn chế"

@@ -42,6 +42,26 @@ patterns:
     context_required: true
     override_level: SECRET
 
+  # ĐÃ GỠ: pattern regex cho "bảo mật tuyệt đối". Xác minh trên dữ liệu thật
+  # (finance_banking__public/fin_pub_00008) cho thấy đây là câu marketing rất
+  # phổ biến trong PR ngân hàng ("...nhanh chóng, an toàn và bảo mật tuyệt
+  # đối") — KHÔNG phải nhãn phân loại tài liệu, khiến 1 thông cáo báo chí
+  # PUBLIC bị đôn lên RESTRICTED. Khác "tuyệt mật" (chỉ dùng trong ngữ cảnh
+  # phân loại mật, hiếm gặp ngoài văn bản mật thật), "bảo mật tuyệt đối" là
+  # cụm quảng cáo an toàn sản phẩm thông thường — giữ lại trong keywords để
+  # boost confidence khi ĐÃ có match khác, không tự tạo match SECRET.
+
+  # "tuyệt mật" — cụm 2 từ đặc trưng, khác "MẬT" đứng một mình (lý do rule
+  # ORG-001c phải cần context: "MẬT" đơn lẻ xuất hiện quá phổ biến trong "bảo
+  # mật", "mật khẩu", "bí mật"). "tuyệt mật" trước đây chỉ nằm trong keywords
+  # (chỉ boost confidence, không tự tạo match) nên các hợp đồng/báo cáo nhắc
+  # "tài liệu thuộc diện tuyệt mật" nhiều lần vẫn không kích hoạt được rule.
+  - regex: '(?i)tuyệt\s*mật'
+    description: "ORG-001e tuyệt mật"
+    confidence: 0.90
+    context_required: false
+    override_level: SECRET
+
 keywords:
   primary:
     - "TỐI MẬT"
@@ -57,6 +77,7 @@ keywords:
     - "eyes only"
     - "need to know"
     - "highly sensitive"
+    - "bảo mật tuyệt đối"
   secondary:
     - "không được sao chép"
     - "lưu hành hạn chế"
@@ -67,3 +88,12 @@ keywords:
     - "kiểm soát đặc biệt"
     - "classification level"
     - "access control"
+
+# Không có validator nào xác nhận "TỐI MẬT" là nhãn thật (chỉ là regex keyword).
+# 1 lần nhắc đến cụm này (vd: tài liệu chính sách GIẢI THÍCH các cấp phân loại,
+# không phải tài liệu MANG nhãn đó) không nên đủ để kết luận cả file SECRET.
+# Cần thêm bằng chứng: validator, ≥2 lần xuất hiện, hoặc rule khác (vd: pii,
+# financial) cùng có mặt ở mức CONFIDENTIAL+ — nếu không, hạ về CONFIDENTIAL.
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL

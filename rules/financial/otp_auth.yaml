@@ -1,0 +1,86 @@
+# FIN-009 — Mã OTP / PIN giao dịch / mã xác thực giao dịch (AUTH_SECRET)
+# Theo tài liệu "Bộ rule kết hợp Regex để phân loại mức độ nhạy cảm", Phần 3
+# Bước 1: AUTH_SECRET luôn RESTRICTED bất kể ngữ cảnh (GDPR Điều 32) — một mã
+# OTP/PIN thật rò rỉ 1 lần đã đủ để chiếm đoạt tài khoản, không cần lặp lại
+# hay có PII đi kèm mới coi là nghiêm trọng.
+#
+# Chiến lược: giống cvv_001 — label + chuỗi số ngay sau, không match số đứng
+# một mình để tránh false positive.
+
+id: otp_auth_001
+name: "FIN-009 Mã OTP / PIN giao dịch / mã xác thực giao dịch"
+category: financial
+level: SECRET
+weight: 0.95
+priority: 96
+tags: [financial, auth_secret, otp, pin, security_critical]
+enabled: true
+
+patterns:
+  # Mã OTP: 482913 / OTP code: 123456 / one-time password = 9012 /
+  # "Mã OTP của quý khách là: 746441" — cho phép tối đa ~30 ký tự không phải
+  # số giữa label và giá trị (ngữ cảnh SMS/email thật luôn chêm "của bạn/quý
+  # khách là" giữa label và số, không đứng sát nhau như trong log kỹ thuật).
+  # Dùng [^\d]{0,30} (không loại trừ \n như trước): file docx dạng bảng
+  # key-value (mỗi ô là 1 <w:p> riêng) tách label/giá trị bằng ĐÚNG 1 dấu
+  # xuống dòng (vd: "OTP gần nhất\n465304") — loại trừ \n trước đây khiến
+  # các bảng kiểu này bị miss hoàn toàn dù giá trị đứng ngay sau label.
+  - regex: '(?i)(?:mã\s*OTP|OTP\s*code|one[\s\-]?time\s*password)[^\d]{0,30}\d{4,8}\b'
+    description: "FIN-009a Mã OTP + chuỗi số"
+    confidence: 0.96
+    context_required: false
+
+  # Mã PIN giao dịch: 1234 / "mã PIN của quý khách là 5678"
+  - regex: '(?i)mã\s*PIN(?:\s*giao\s*dịch)?[^\d]{0,30}\d{4,8}\b'
+    description: "FIN-009b Mã PIN (giao dịch) + chuỗi số"
+    confidence: 0.95
+    context_required: false
+
+  # Mã xác thực (giao dịch): 837201 / "mã xác thực giao dịch của quý khách là: 837201"
+  - regex: '(?i)mã\s*xác\s*thực(?:\s*giao\s*dịch)?[^\d]{0,30}\d{4,8}\b'
+    description: "FIN-009c Mã xác thực giao dịch + chuỗi số"
+    confidence: 0.95
+    context_required: false
+
+  # OTP đứng một mình cạnh chuỗi số — confidence thấp hơn, cần keyword hỗ trợ
+  # (tránh match "OTP" trong tài liệu hướng dẫn chung không có mã cụ thể)
+  - regex: '(?i)\bOTP\b[^\d]{0,30}\d{4,8}\b'
+    description: "FIN-009d OTP standalone + chuỗi số"
+    confidence: 0.88
+    context_required: true
+
+  # Giá trị đứng sau "là:" — mẫu email/SMS thật thường viết dài dòng
+  # ("Mã OTP để xác thực giao dịch chuyển khoản số tiền 175.000.000 VND tới
+  # tài khoản ...9287 là: 871601**") nên số tiền/số TK chen giữa label và mã
+  # thật, làm 3 pattern trên (giới hạn 30 ký tự không phải số) không với tới.
+  # Giá trị có thể bị che một phần bằng "*" (vd: "871601**"). Ranh giới cuối
+  # dùng (?:[^\d]|$) thay vì \b: PDF text layer (thư viện ledongthuc/pdf) hay
+  # chèn ký tự rác cuối dòng (vd: "737750ý") không phải khoảng trắng/dấu câu
+  # — \b hoặc [.,]\s không match được nhưng [^\d] thì vẫn đúng vì mục tiêu chỉ
+  # là "không phải số tiếp theo", không cần biết ký tự đó là gì.
+  # context_required=true: chỉ tính khi rule đã có keyword OTP/PIN/xác thực
+  # xuất hiện đâu đó trong cùng chunk (không phải mọi "là: <số>" trong file).
+  - regex: '(?i)\blà\s*[:：]\s*[\d\*]{4,8}(?:[^\d]|$)'
+    description: "FIN-009e Giá trị OTP/PIN sau nhãn 'là:' (có thể bị che 1 phần)"
+    confidence: 0.85
+    context_required: true
+
+keywords:
+  primary:
+    - "mã OTP"
+    - "OTP code"
+    - "mã PIN giao dịch"
+    - "mã xác thực giao dịch"
+    - "one-time password"
+  secondary:
+    - "OTP"
+    - "PIN"
+    - "xác thực giao dịch"
+    - "xác thực 2 yếu tố"
+    - "2FA"
+    - "mã bảo mật giao dịch"
+
+false_positive_reduction:
+  min_context_window: 60
+  exclude_if_no_keywords: false
+  # 4 pattern đầu đã nhúng label vào regex → không cần keyword riêng

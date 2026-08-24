@@ -36,18 +36,32 @@ func ExtractDOCX(path string) ([]byte, error) {
 				_ = rc.Close()
 				return nil, wrapErr(path, "decode_document_xml", err)
 			}
-			ch, ok := tok.(xml.CharData)
-			if !ok {
-				continue
+			switch t := tok.(type) {
+			case xml.StartElement:
+				// Word thường tách một câu thành nhiều <w:t> riêng biệt (do
+				// format, spell-check, revision mark...) trong CÙNG một
+				// đoạn văn <w:p>. Chỉ chèn xuống dòng ở ranh giới đoạn/dòng
+				// thật (<w:p>, <w:br>, <w:tab>) — nếu chèn \n giữa mọi
+				// <w:t> như trước đây, các cụm bị Word tách run (vd: "Mã
+				// OTP của quý khách là: " + "746441") sẽ bị regex coi là 2
+				// dòng riêng biệt và không match được.
+				switch t.Name.Local {
+				case "p":
+					if out.Len() > 0 {
+						out.WriteByte('\n')
+					}
+				case "br", "cr":
+					out.WriteByte('\n')
+				case "tab":
+					out.WriteByte('\t')
+				}
+			case xml.CharData:
+				// KHÔNG TrimSpace: <w:t xml:space="preserve"> cố ý giữ
+				// khoảng trắng đầu/cuối để nối liền với run kế tiếp (vd:
+				// "Mã OTP của quý khách là: " nối "746441"). Trim ở đây sẽ
+				// làm mất khoảng trắng phân cách giữa 2 run.
+				out.Write(t)
 			}
-			text := bytes.TrimSpace(ch)
-			if len(text) == 0 {
-				continue
-			}
-			if out.Len() > 0 {
-				out.WriteByte('\n')
-			}
-			out.Write(text)
 		}
 
 		_ = rc.Close()

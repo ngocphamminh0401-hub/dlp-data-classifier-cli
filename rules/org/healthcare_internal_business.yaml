@@ -1,0 +1,187 @@
+# ORG-011 — Văn bản nghiệp vụ nội bộ thông thường (bệnh viện/y tế)
+# Tương tự hr_internal_business_001/business_internal_specific_001 nhưng
+# cho từ vựng ĐẶC THÙ NGÀNH Y TẾ — vá lỗ hổng phát hiện qua dữ liệu thật:
+# 249/1600 file healthcare__internal bị chấm PUBLIC vì dùng từ vựng vận
+# hành bệnh viện (danh mục thuốc/vật tư, lịch trực khoa, quy trình kiểm
+# soát nhiễm khuẩn, họp giao ban, đào tạo nội bộ...) mà business_internal_
+# 001 (catch-all chung, có gate) chỉ khớp ĐƯỢC 1 LẦN nên bị gate hạ PUBLIC,
+# và watermark/business_internal_specific không có từ vựng y tế chuyên biệt.
+#
+# LƯU Ý THIẾT KẾ (rút kinh nghiệm từ hr_internal_business_001): BẮT ĐẦU
+# NGAY với level_gate (không đợi phát hiện FP rồi mới thêm như HR) — vì đã
+# xác nhận nhiều lần trong phiên này rằng từ vựng "nghiệp vụ nội bộ" tưởng
+# đặc thù vẫn có thể rò rỉ vào văn bản PUBLIC hợp pháp (báo cáo thường niên,
+# trang giới thiệu công khai). Đã kiểm chứng trên healthcare__public trước
+# khi hoàn thiện — xem ghi chú A/B trong hội thoại thêm rule này.
+
+id: healthcare_internal_business_001
+name: "ORG-011 Văn bản nghiệp vụ nội bộ bệnh viện/y tế thông thường"
+category: org
+level: INTERNAL
+weight: 0.75
+priority: 39
+tags: [org, business_internal, generic_internal, healthcare]
+enabled: true
+
+patterns:
+  # Họp giao ban khoa/phòng — thông báo hoặc biên bản
+  - regex: '(?i)(?:th[ôo]ng\s*b[áa]o\s*)?(?:l[ịi]ch\s*)?h[ọo]p\s*giao\s*ban(?:\s*khoa)?|bi[êe]n\s*b[ảa]n\s*giao\s*ban'
+    description: "ORG-011a Họp giao ban khoa/phòng"
+    confidence: 0.72
+    context_required: false
+
+  # Danh mục thuốc / vật tư y tế
+  - regex: '(?i)danh\s*m[ụu]c\s*thu[ốo]c(?:,?\s*v[ậa]t\s*t[ưu]\s*y\s*t[ếe])?'
+    description: "ORG-011b Danh mục thuốc/vật tư y tế"
+    confidence: 0.75
+    context_required: false
+
+  # Hội đồng Thuốc và Điều trị — cơ quan phê duyệt danh mục thuốc bệnh viện,
+  # xác nhận đồng nhất xuất hiện trong mọi mẫu "danh mục thuốc" thật (health_
+  # int_00006/00702/00704.docx) — dùng làm tín hiệu thứ 2 corroborate cho
+  # ORG-011b khi văn bản chỉ có tiêu đề "danh mục thuốc" mà không có ghi chú
+  # nội bộ tường minh nào khác (health_int_00704.docx, trước đây tụt PUBLIC
+  # vì chỉ có 1 tín hiệu).
+  - regex: '(?i)h[ộo]i\s*đ[ồo]ng\s*thu[ốo]c\s*v[àa]\s*đi[ềe]u\s*tr[ịi]'
+    description: "ORG-011k Hội đồng Thuốc và Điều trị"
+    confidence: 0.75
+    context_required: false
+
+  # Lịch trực khoa/phòng, lịch trực gác
+  - regex: '(?i)l[ịi]ch\s*tr[ựu]c\s*(?:khoa|ph[òo]ng|g[áa]c)'
+    description: "ORG-011c Lịch trực khoa/phòng/gác"
+    confidence: 0.78
+    context_required: false
+
+  # Quy trình kiểm soát nhiễm khuẩn
+  - regex: '(?i)ki[ểe]m\s*so[áa]t\s*nhi[ễe]m\s*khu[ẩa]n'
+    description: "ORG-011d Kiểm soát nhiễm khuẩn"
+    confidence: 0.80
+    context_required: false
+
+  # Quy trình tiếp nhận/vận hành khoa/phòng khám — ĐÃ MỞ RỘNG 2 CHIỀU:
+  # (1) cho phép "tiếp nhận" và "vận hành" đi CÙNG NHAU nối bằng "và"/"/"
+  #     (VD "tiếp nhận/vận hành khoa", "tiếp nhận và vận hành phòng khám")
+  #     — bản gốc chỉ khớp 1 trong 2 từ đứng riêng, không khớp dạng nối vì
+  #     ký tự nối ("/", "và") chen giữa phá vỡ \s*khoa đi ngay sau; (2) cho
+  #     phép hậu tố "phòng khám"/"phòng" ngoài "khoa" — xác nhận qua
+  #     health_int_00071.docx (phòng khám, nối "và") và health_int_00611.
+  #     docx (khoa, nối "/") (cả hai healthcare__internal, ground truth
+  #     INTERNAL).
+  #
+  # ĐÃ MỞ RỘNG THÊM: cho phép "bệnh nhân" chen giữa động từ và khoa/phòng
+  # (VD "tiếp nhận BỆNH NHÂN khoa khám bệnh ngoại trú") — xác nhận qua
+  # health_int_00765.docx (healthcare__internal, ground truth INTERNAL).
+  - regex: '(?i)quy\s*tr[ìi]nh\s*(?:ti[ếe]p\s*nh[ậa]n\s*(?:b[ệe]nh\s*nh[âa]n\s*)?(?:v[àa]|/)?\s*v[ậa]n\s*h[àa]nh|ti[ếe]p\s*nh[ậa]n(?:\s*b[ệe]nh\s*nh[âa]n)?|v[ậa]n\s*h[àa]nh)\s*(?:khoa|ph[òo]ng\s*kh[áa]m|ph[òo]ng)\b'
+    description: "ORG-011e Quy trình tiếp nhận/vận hành khoa/phòng khám"
+    confidence: 0.75
+    context_required: false
+
+  # Báo cáo thống kê hoạt động khám chữa bệnh — YÊU CẦU gắn với "khoa/phòng"
+  # (chi tiết vận hành nội bộ) để phân biệt với báo cáo tổng hợp toàn viện
+  # có thể xuất hiện trong báo cáo thường niên PUBLIC (cùng lớp rủi ro với
+  # "tỷ lệ nghỉ việc" đã gặp ở domain hr — xem lịch sử phiên).
+  #
+  # ĐÃ MỞ RỘNG: "theo khoa" bản gốc chỉ khớp dạng CÙNG DÒNG "...bệnh theo
+  # khoa", bỏ sót dạng tiêu đề 2 dòng phổ biến hơn "BÁO CÁO THỐNG KÊ HOẠT
+  # ĐỘNG KHÁM CHỮA BỆNH\nKHOA NỘI TỔNG HỢP" (tên khoa xuống dòng ngay dưới,
+  # không có chữ "theo"). "theo" nay là TÙY CHỌN — \s* vẫn khớp \n nên bao
+  # trùm cả 2 dạng, không nới thêm rủi ro so với bản gốc (vẫn yêu cầu "khoa"
+  # đứng NGAY sau, chỉ khác có "theo" hay không). Xác nhận qua health_int_
+  # 00784.docx (healthcare__internal, ground truth INTERNAL).
+  - regex: '(?i)th[ốo]ng\s*k[êe]\s*ho[ạa]t\s*đ[ộo]ng\s*kh[áa]m\s*ch[ữu]a\s*b[ệe]nh\s*(?:theo\s*)?khoa'
+    description: "ORG-011f Thống kê hoạt động khám chữa bệnh theo khoa"
+    confidence: 0.78
+    context_required: false
+
+  # Quy chế bảo mật hồ sơ bệnh án — CHÍNH SÁCH nội bộ, không phải hồ sơ thật
+  - regex: '(?i)quy\s*ch[ếe]\s*b[ảa]o\s*m[ậa]t\s*h[ồo]\s*s[ơo]\s*b[ệe]nh\s*[áa]n'
+    description: "ORG-011g Quy chế bảo mật hồ sơ bệnh án"
+    confidence: 0.82
+    context_required: false
+
+  # "Thời hạn lưu trữ hồ sơ bệnh án" — mục quy định thời hạn lưu trữ, xuất
+  # hiện đồng nhất trong mọi mẫu "quy chế bảo mật hồ sơ bệnh án" thật đã gặp
+  # (health_int_00616/00627/00751.docx) nhưng KHÔNG phải lúc nào ORG-011g
+  # cũng khớp lần 2 (VD 00751 chỉ nhắc "quy chế này" ở phần xử lý vi phạm,
+  # không lặp lại nguyên cụm). Thêm làm tín hiệu thứ 2 CÙNG rule (đủ điều
+  # kiện corroboration ≥2 lần khớp) cho văn bản chỉ có 1 lần "quy chế bảo
+  # mật hồ sơ bệnh án" ở tiêu đề. Xác nhận qua health_int_00751.docx
+  # (healthcare__internal, ground truth INTERNAL, trước đây tụt PUBLIC).
+  - regex: '(?i)th[ờo]i\s*h[ạa]n\s*l[ưu]u\s*tr[ữu]\s*h[ồo]\s*s[ơo]\s*b[ệe]nh\s*[áa]n'
+    description: "ORG-011l Thời hạn lưu trữ hồ sơ bệnh án"
+    confidence: 0.75
+    context_required: false
+
+  # Đào tạo/hội thảo chuyên môn nội bộ
+  - regex: '(?i)(?:h[ộo]i\s*th[ảa]o|đ[àa]o\s*t[ạa]o)\s*chuy[êe]n\s*m[ôo]n\s*n[ộo]i\s*b[ộo]|h[ợo]p\s*đ[ồo]ng\s*t[ổo]\s*ch[ứu]c\s*đ[àa]o\s*t[ạa]o\s*n[ộo]i\s*b[ộo]'
+    description: "ORG-011h Đào tạo/hội thảo chuyên môn nội bộ"
+    confidence: 0.75
+    context_required: false
+
+  # Memo/email nội bộ bệnh viện dạng "Đến: <đơn vị lãnh đạo/ban giám đốc>"
+  # với domain email nội bộ bệnh viện — xác nhận qua health_int_00030.docx:
+  # "Từ: phongkham.noibo@benhvienabc.vn / Đến: banlanhdao@benhvienabc.vn".
+  # Thêm để tạo lần khớp thứ 2 CÙNG rule này (không phải rule business_
+  # internal_001 khác) cho các email báo cáo nội bộ — corroboration của
+  # engine chỉ tính "≥2 lần khớp CÙNG ruleID", 2 rule khác nhau khớp 1 lần
+  # mỗi rule KHÔNG tự corroborate nhau (đã xác nhận qua thử nghiệm A/B ở
+  # domain hr trước đó trong phiên).
+  - regex: '(?i)đ[ếe]n\s*[:=]\s*[a-z0-9._-]+@[a-z0-9.-]*benhvien[a-z0-9.-]*|t[ừu]\s*[:=]\s*[a-z0-9._-]+\.noibo@|noibo@benhvien'
+    description: "ORG-011j Email nội bộ bệnh viện (Đến:/Từ: ...@benhvien...)"
+    confidence: 0.70
+    context_required: false
+
+  # Số điện thoại nội bộ dạng số máy lẻ (SĐT nội bộ: 2345) — tín hiệu cấu
+  # trúc yếu, cần corroborate (context_required)
+  - regex: '(?i)s[ốđ][tđ]\s*n[ộo]i\s*b[ộo]\s*[:=]?\s*\d{3,6}\b'
+    description: "ORG-011i SĐT nội bộ (số máy lẻ)"
+    confidence: 0.55
+    context_required: true
+
+  # "Người soạn thảo:" — chân trang chữ ký PHÊ DUYỆT quy trình/SOP nội bộ,
+  # xuất hiện đồng nhất trong mọi văn bản "Quy trình..." đã gặp (health_int_
+  # 00071/00763/00765.docx) nhưng KHÔNG có pattern nào khác của rule này
+  # khớp lần 2 khi văn bản chỉ có tiêu đề + các bước quy trình (không có
+  # "danh mục thuốc"/"họp giao ban"/... đi kèm). Thêm làm tín hiệu thứ 2 CÙNG
+  # rule — đủ corroboration cho SOP ngắn chỉ có 1 tiêu đề nhận diện được.
+  # Xác nhận qua health_int_00763.docx (healthcare__internal, ground truth
+  # INTERNAL, trước đây tụt PUBLIC vì chỉ 1 match).
+  - regex: '(?i)ng[ưu][ờo]i\s*so[ạa]n\s*th[ảa]o\s*[:=]'
+    description: "ORG-011m Người soạn thảo (chân trang SOP nội bộ)"
+    confidence: 0.65
+    context_required: false
+
+keywords:
+  primary:
+    - "họp giao ban"
+    - "lịch giao ban"
+    - "danh mục thuốc"
+    - "vật tư y tế"
+    - "lịch trực khoa"
+    - "lịch trực gác"
+    - "kiểm soát nhiễm khuẩn"
+    - "quy trình vận hành khoa"
+    - "quy trình tiếp nhận khoa"
+    - "thống kê hoạt động khám chữa bệnh"
+    - "quy chế bảo mật hồ sơ bệnh án"
+    - "đào tạo chuyên môn nội bộ"
+    - "hội thảo chuyên môn nội bộ"
+    - "hội đồng thuốc và điều trị"
+    - "thời hạn lưu trữ hồ sơ bệnh án"
+    - "quy trình tiếp nhận bệnh nhân"
+    - "người soạn thảo"
+  secondary:
+    - "khoa"
+    - "trưởng khoa"
+    - "bệnh viện"
+    - "cán bộ, nhân viên"
+    - "sđt nội bộ"
+
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

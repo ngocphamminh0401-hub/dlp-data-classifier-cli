@@ -1,0 +1,69 @@
+# HR-001 — Hồ sơ xét kết nạp Đảng (lý lịch chính trị cá nhân + thân nhân)
+# Đặc trưng: định danh đích danh (họ tên, ngày sinh, quê quán) của đương sự
+# GẮN KÈM lý lịch chính trị 3 đời (cha/mẹ/vợ-chồng/con) với năm sinh, nghề
+# nghiệp, nơi cư trú, và "kết luận lịch sử chính trị" — đây là tổ hợp PII +
+# political affiliation/background của NHIỀU cá nhân trong 1 tài liệu, rủi
+# ro cao hơn nhiều so với 1 dòng nhắc "đảng viên" đơn lẻ trong văn bản hành
+# chính chung. Mức RESTRICTED vì lộ lọt có thể ảnh hưởng nghiêm trọng đến
+# uy tín/an toàn cá nhân và gia đình liên quan.
+
+id: hr_party_membership_dossier_001
+name: "HR-001 Hồ sơ xét kết nạp Đảng (lý lịch chính trị cá nhân/thân nhân)"
+category: hr
+level: RESTRICTED
+weight: 0.88
+priority: 88
+tags: [hr, political_affiliation, family_background, pii]
+enabled: true
+
+patterns:
+  # Tiêu đề hồ sơ xét kết nạp Đảng
+  - regex: '(?i)h[ồo]\s*s[ơo]\s*x[ée]t\s*k[ếe]t\s*n[ạa]p\s*đ[ảa]ng'
+    description: "HR-001a Tiêu đề hồ sơ xét kết nạp Đảng"
+    confidence: 0.92
+    context_required: false
+
+  # Mục "kết luận lịch sử chính trị" gắn với quan hệ thân nhân cụ thể
+  - regex: '(?i)k[ếe]t\s*lu[ậa]n\s*l[ịi]ch\s*s[ửu]\s*ch[íi]nh\s*tr[ịi]'
+    description: "HR-001b Kết luận lịch sử chính trị (thẩm tra thân nhân)"
+    confidence: 0.85
+    context_required: false
+
+  # Bảng thẩm tra thân nhân: quan hệ (Cha đẻ/Mẹ đẻ/Vợ/chồng/Con đẻ) + năm sinh
+  - regex: '(?i)(?:cha\s*đ[ẻe]|m[ẹe]\s*đ[ẻe]|v[ợo]\/ch[ồo]ng|con\s*đ[ẻe])\s*.{0,40}\b(?:19|20)\d{2}\b'
+    description: "HR-001c Dòng thẩm tra thân nhân (quan hệ + năm sinh)"
+    confidence: 0.75
+    context_required: true
+
+  # Lý lịch chính trị bản thân / thành phần gia đình xuất thân
+  - regex: '(?i)l[ýy]\s*l[ịi]ch\s*ch[íi]nh\s*tr[ịi]\s*b[ảa]n\s*th[âa]n|th[àa]nh\s*ph[ầa]n\s*gia\s*đ[ìi]nh\s*xu[ấa]t\s*th[âa]n'
+    description: "HR-001d Lý lịch chính trị bản thân/thành phần gia đình"
+    confidence: 0.75
+    context_required: false
+
+keywords:
+  primary:
+    - "xét kết nạp đảng"
+    - "lý lịch chính trị"
+    - "thẩm tra xác minh lý lịch"
+    - "kết luận lịch sử chính trị"
+    - "chi bộ"
+  secondary:
+    - "cha đẻ"
+    - "mẹ đẻ"
+    - "quan hệ chính trị - xã hội"
+    - "cấp ủy"
+    - "bí thư chi bộ"
+    - "đoàn tncs hồ chí minh"
+
+# Cần corroboration: tránh 1 câu nhắc "đảng viên"/"chi bộ" trong văn bản
+# hành chính chung (vd thông báo họp chi bộ định kỳ không có lý lịch cá
+# nhân) bị gắn nhầm RESTRICTED. Bắt buộc phải có định danh cá nhân + bảng
+# thẩm tra thân nhân hoặc mục lý lịch chính trị cụ thể trong cùng chunk.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 120
+  exclude_if_no_keywords: false

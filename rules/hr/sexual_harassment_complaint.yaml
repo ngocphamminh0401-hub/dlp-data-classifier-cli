@@ -1,0 +1,99 @@
+# HR-020 — Hồ sơ xử lý khiếu nại quấy rối tình dục tại nơi làm việc
+# Phát hiện qua thực tế: các hồ sơ này thường bị phân loại INTERNAL vì cụm
+# "khiếu nại" / "quấy rối" xuất hiện tràn lan trong tài liệu chính sách,
+# email nhắc nhở chung, hoặc bộ quy tắc ứng xử — không riêng gì hồ sơ vụ
+# việc thật. Cần bắt được ĐÚNG cấu trúc hồ sơ vụ việc cụ thể (mã số vụ việc,
+# tổ xác minh, mốc quy trình, cam kết bảo mật) chứ không chỉ từ khóa chủ đề.
+#
+# Rủi ro rò rỉ: gắn liền danh tính người khiếu nại/bị khiếu nại + tình tiết
+# nhạy cảm (có thể kèm dữ liệu sức khỏe/nghỉ ốm như minh chứng) → luôn
+# RESTRICTED ngay cả khi kết luận "không đủ căn cứ vi phạm".
+#
+# ĐÃ KIỂM CHỨNG trên dữ liệu thật (hr_top_00017.docx, sub_type
+# ho_so_khieu_nai_quay_roi): tiêu đề "HỒ SƠ XỬ LÝ KHIẾU NẠI HÀNH VI QUẤY RỐI
+# TÌNH DỤC TẠI NƠI LÀM VIỆC" (HR-020a) và mã vụ việc dạng "HR-QR-2024-22"
+# (HR-020b) đều khớp đúng quy ước thật trong dataset — không phải giả định.
+#
+# LƯU Ý TRIỂN KHAI:
+# 1) id đổi từ "hr_020" → "hr_sexual_harassment_complaint_001": engine tự
+#    tách "prefix" từ ruleID bằng cách bỏ hậu tố "_<số>" cuối cùng
+#    (internal/engine/classifier.go: ruleIDPrefix()) — id "hr_020" sẽ bị cắt
+#    thành prefix "hr", trùng với tag category "hr" dùng chung cho MỌI rule
+#    HR khác, phá vỡ khả năng compound_rules nhắm riêng rule này qua tag
+#    "hr_hr_sexual_harassment_complaint". Đổi tên theo đúng quy ước các
+#    rule HR-001/002/003 đã có (mô tả + hậu tố "_001").
+# 2) category đổi "hr_misconduct" → "hr" để nhất quán với các rule HR khác
+#    (party_membership_dossier, disciplinary_health_investigation...) —
+#    category chỉ là tag chuỗi tự do, không có ý nghĩa enum trong engine,
+#    nhưng tách category tùy tiện theo từng rule làm phân mảnh tag "hr" khi
+#    cần viết compound_rules dùng chung sau này.
+# 3) ĐÃ XÓA false_positive_reduction.exclude_patterns: field này KHÔNG có
+#    trong struct FPReduction (internal/engine/rules.go — chỉ có
+#    min_context_window, exclude_if_no_keywords, luhn_required,
+#    cvv_expiry_boost) — field lạ bị parser bỏ qua ÂM THẦM chứ không lỗi,
+#    nên giữ lại sẽ gây ảo tưởng có bảo vệ trong khi thực tế không có tác
+#    dụng gì. Rủi ro thấp vì level_gate (require_corroboration) đã đóng vai
+#    trò lọc chính; văn bản chính sách/đào tạo chung không có mã vụ việc cụ
+#    thể nên HR-020a/b/d khó khớp (không context_required nhưng đòi cấu trúc
+#    cụ thể), còn nếu chỉ HR-020c (context_required:true, yếu nhất) khớp
+#    đơn lẻ thì level_gate hạ về CONFIDENTIAL theo đúng thiết kế.
+
+id: hr_sexual_harassment_complaint_001
+name: "HR-020 Hồ sơ/đơn khiếu nại quấy rối tình dục nơi làm việc"
+category: hr
+level: RESTRICTED
+weight: 0.92
+priority: 92
+tags: [hr, sexual_harassment, disciplinary_case, health_data]
+enabled: true
+
+patterns:
+  # Tiêu đề hồ sơ vụ việc — cụm cố định, đặc thù cao
+  - regex: '(?i)hồ\s*sơ\s*(?:xử\s*lý\s*)?khiếu\s*nại\s*(?:về\s*)?(?:hành\s*vi\s*)?quấy\s*rối\s*t[ìi]nh\s*dục'
+    description: "HR-020a Tiêu đề hồ sơ khiếu nại QRTD"
+    confidence: 0.92
+    context_required: false
+
+  # Mã số vụ việc dạng HR-QR-xxxx hoặc QRTD-xxxx
+  - regex: '(?i)mã\s*(?:số\s*)?vụ\s*việc\s*[:=]?\s*(?:HR-QR|QRTD)[-\/]?\d{2,4}[-\/]?\d{2,4}'
+    description: "HR-020b Mã số vụ việc khiếu nại QRTD"
+    confidence: 0.90
+    context_required: false
+
+  # Cam kết bảo mật gắn với vụ việc/khiếu nại (không phải bảo mật chung chung)
+  - regex: '(?i)cam\s*kết\s*bảo\s*mật\s*thông\s*tin.{0,60}(?:vụ\s*việc|khiếu\s*nại|người\s*(?:khiếu\s*nại|bị\s*phản\s*ánh))'
+    description: "HR-020c Điều khoản bảo mật gắn với vụ việc cụ thể"
+    confidence: 0.75
+    context_required: true
+
+  # Email/đơn khiếu nại cá nhân tự thuật, có mã nhân viên + nội dung nhạy cảm chưa trình bày
+  - regex: '(?i)(?:khiếu\s*nại|phản\s*ánh).{0,40}quấy\s*rối.{0,80}mã\s*nhân\s*viên\s*[:=]?\s*[A-Z]{0,3}\d{3,8}'
+    description: "HR-020d Đơn/email khiếu nại cá nhân kèm mã nhân viên"
+    confidence: 0.85
+    context_required: false
+
+keywords:
+  primary:
+    - "quấy rối tình dục"
+    - "tổ xác minh"
+    - "biện pháp bảo vệ tạm thời"
+    - "lưu hành nội bộ hạn chế"
+    - "đơn khiếu nại"
+  secondary:
+    - "kết luận xử lý"
+    - "xử lý kỷ luật"
+    - "người bị phản ánh"
+    - "cố vấn pháp lý"
+    - "ban kiểm tra nội bộ"
+
+# Corroboration bắt buộc: 1 từ "quấy rối" đơn lẻ trong bộ quy tắc ứng xử/đào
+# tạo không đủ. Cần đi kèm ít nhất 1 tín hiệu "đây là 1 vụ việc cụ thể"
+# (mã số vụ việc, tổ xác minh, mã nhân viên, hoặc tên người liên quan) để
+# tránh nhầm với tài liệu chính sách/thông báo chung.
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
+false_positive_reduction:
+  min_context_window: 120
+  exclude_if_no_keywords: true

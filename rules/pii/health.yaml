@@ -16,46 +16,160 @@ priority: 85
 tags: [pii, health, medical_record, sensitive_pii, ndctn13]
 enabled: true
 
+# Theo tài liệu "Bộ rule kết hợp Regex" (Phần 2): chỉ nhóm HEALTH_RESTRICTED
+# (HIV, tâm thần, di truyền/ADN/gen, sản khoa/phá thai, pháp y) mới luôn
+# SECRET đứng một mình. HEALTH_GENERAL (tên bệnh nhân + chẩn đoán/ICD/đơn
+# thuốc/bệnh thông thường như ung thư, tiểu đường, tim mạch...) chỉ đạt
+# CONFIDENTIAL theo Bước 4 — trước đây TOÀN BỘ pattern trong rule này đều để
+# SECRET (rule.Level mặc định), khiến 1 file chỉ có "chẩn đoán: viêm phổi"
+# (HEALTH_GENERAL, đúng ra CONFIDENTIAL theo đúng test case gốc trong tài
+# liệu) cũng bị xếp SECRET/RESTRICTED — góp phần vào over-classify diện rộng.
+#
+# LƯU Ý PHÁP LÝ (đã cân nhắc, không phải bỏ sót): NĐ13 Điều 2 Khoản 4 và
+# GDPR Điều 9 xếp TOÀN BỘ dữ liệu sức khỏe gắn định danh vào nhóm nhạy cảm/
+# special category, KHÔNG phân biệt theo loại bệnh — đọc thuần túy theo
+# luật thì HEALTH_GENERAL cũng phải ở mức bảo vệ cao nhất như
+# HEALTH_RESTRICTED, không tách 2 tầng như dưới đây. Đã cân nhắc và CỐ Ý
+# giữ nguyên tách tầng (risk-based trong lòng category pháp lý "nhạy cảm",
+# cách tiếp cận phổ biến trong DLP thực tế) vì gộp về 1 tầng cao nhất sẽ
+# gây over-classify diện rộng toàn bộ domain y tế (mọi "Chẩn đoán:" thường
+# quy cũng nhảy SECRET/RESTRICTED) — phá vỡ phân biệt 4 tier đã dày công
+# xây dựng. Sàn tối thiểu CONFIDENTIAL cho MỌI dữ liệu sức khỏe gắn định
+# danh vẫn được đảm bảo (không rule nào trong file này override xuống
+# PUBLIC/INTERNAL) — tuân thủ đúng "phải bảo vệ như dữ liệu nhạy cảm",
+# chỉ khác về "có luôn là mức cao nhất trong nội bộ hay không".
 patterns:
-  # Bệnh án / Medical record — tài liệu y tế chính thức
+  # Bệnh án / Medical record — tài liệu y tế chính thức (HEALTH_GENERAL)
   - regex: '(?i)(?:bệnh\s*án|medical\s*record|hồ\s*sơ\s*bệnh\s*án|patient\s*record|health\s*record)'
     description: "Bệnh án / Medical record"
     confidence: 0.88
     context_required: false
+    override_level: CONFIDENTIAL
 
-  # Chẩn đoán bệnh — với label rõ ràng
+  # Phiếu khám sức khỏe (thẩm định bảo hiểm/tuyển dụng) — dạng biểu mẫu có
+  # kết quả khám lâm sàng/cận lâm sàng chi tiết nhưng KHÔNG dùng nhãn "chẩn
+  # đoán:" (thường là bảng chuyên khoa + "Kết luận của bác sĩ khám:"/"Phân
+  # loại sức khỏe:"). Trước đây bị bỏ sót hoàn toàn dù rõ ràng là hồ sơ y tế.
+  - regex: '(?i)(?:phiếu\s*khám\s*sức\s*khỏe|phân\s*loại\s*sức\s*khỏe|kết\s*luận\s*của\s*bác\s*sĩ|khám\s*lâm\s*sàng|kết\s*quả\s*cận\s*lâm\s*sàng)'
+    description: "Phiếu khám sức khỏe / kết luận bác sĩ / khám lâm sàng"
+    confidence: 0.85
+    context_required: false
+    override_level: CONFIDENTIAL
+
+  # Chẩn đoán bệnh — với label rõ ràng (HEALTH_GENERAL)
   - regex: '(?i)(?:chẩn\s*đoán|diagnosis|kết\s*luận\s*khám|kết\s*quả\s*khám)\s*[:=]'
     description: "Chẩn đoán / Kết luận khám bệnh (có label)"
     confidence: 0.90
     context_required: false
+    override_level: CONFIDENTIAL
 
-  # Kết quả xét nghiệm — với label
+  # Kết quả xét nghiệm — với label (HEALTH_GENERAL)
   - regex: '(?i)(?:kết\s*quả\s*xét\s*nghiệm|xét\s*nghiệm|lab\s*result|test\s*result|laboratory)\s*[:=]'
     description: "Kết quả xét nghiệm (có label)"
     confidence: 0.88
     context_required: false
+    override_level: CONFIDENTIAL
 
-  # Tên bệnh nhạy cảm — HIV, ung thư, tâm thần, tiểu đường v.v.
-  - regex: '(?i)(?:HIV|AIDS|ung\s*thư|cancer|u\s*ác\s*tính|malignant|viêm\s*gan\s*[ABCDE]|hepatitis|lao\s*phổi|tuberculosis|tâm\s*thần|psychiatric|tâm\s*lý\s*học|tiểu\s*đường|diabetes|tim\s*mạch|cardiovascular|đột\s*quỵ|stroke|thận\s*mãn|chronic\s*kidney|suy\s*thận|renal\s*failure)'
-    description: "Tên bệnh nhạy cảm (HIV, ung thư, tâm thần, ...)"
+  # HEALTH_RESTRICTED — bệnh/tình trạng nguy cơ kỳ thị cao, luôn SECRET đứng
+  # một mình theo tài liệu (GDPR Điều 9 + Recital 51), KHÔNG cần PII đi kèm.
+  - regex: '(?i)(?:HIV|AIDS|tâm\s*thần|psychiatric)'
+    description: "Bệnh nhạy cảm cao (HIV/AIDS, tâm thần) — HEALTH_RESTRICTED"
+    confidence: 0.85
+    context_required: true
+    override_level: SECRET
+
+  # HEALTH_RESTRICTED (tiếp) — di truyền/ADN/gen, sản khoa/phá thai, pháp y.
+  # Trước đây thiếu hoàn toàn dù tài liệu liệt kê rõ trong nhóm này (chỉ có
+  # HIV/AIDS/tâm thần) — xác nhận qua ví dụ thật (insurance__top_secret:
+  # "hồ sơ định phí bảo hiểm sức khỏe" có "bệnh di truyền" nhưng chỉ đạt
+  # CONFIDENTIAL vì rule chưa cover). "gen" đứng riêng dễ FP nên chỉ nhận
+  # dạng "xét nghiệm gen"/"bệnh di truyền"/"di truyền học", không match "gen"
+  # đơn lẻ.
+  #
+  # ĐÃ SỬA BUG (vòng 1): bản gốc CÓ bare "di\s*truyền" trong alternation dù
+  # comment trên nói rõ ý định KHÔNG match dạng đơn lẻ — mâu thuẫn giữa
+  # comment và regex thật. Xác nhận qua ins_int_00286.docx (insurance__
+  # internal, ground truth INTERNAL) rằng bare "di truyền" khớp cả câu PHỦ
+  # ĐỊNH "không yêu cầu khách hàng cung cấp... xét nghiệm di truyền" — RE2
+  # không lookbehind nên không loại trừ được "không yêu cầu" đứng trước.
+  #
+  # ĐÃ SỬA BUG (vòng 2): "bệnh di truyền" TƯỞNG đủ cụ thể để giữ SECRET
+  # nhưng xác nhận qua health_conf_00004.docx (healthcare__confidential,
+  # ground truth CONFIDENTIAL) rằng cụm này CŨNG bị phủ định — mọi bệnh án
+  # ngoại trú chuẩn đều có mục "Tiền sử gia đình: Không có ai mắc bệnh
+  # truyền nhiễm hoặc bệnh di truyền" như CÂU HỎI SÀNG LỌC THƯỜNG QUY (âm
+  # tính), không phải chẩn đoán thật — khiến hầu hết bệnh án khám thông
+  # thường (đau họng, sốt nhẹ...) tự nhảy SECRET/RESTRICTED oan. Demote
+  # "bệnh di truyền" xuống HEALTH_GENERAL (override CONFIDENTIAL, xem
+  # pattern dưới) — chỉ giữ SECRET cho "xét nghiệm gen"/"di truyền học"
+  # (nhắc đến XÉT NGHIỆM/LĨNH VỰC cụ thể, không phải câu hỏi sàng lọc có/
+  # không dễ bị phủ định).
+  - regex: '(?i)(?:xét\s*nghiệm\s*gen|di\s*truyền\s*học|\bADN\b|\bDNA\b|sản\s*khoa|phá\s*thai|pháp\s*y)'
+    description: "Di truyền/ADN/sản khoa/phá thai/pháp y — HEALTH_RESTRICTED"
+    confidence: 0.83
+    context_required: true
+    override_level: SECRET
+
+  # "bệnh di truyền" — demote xuống HEALTH_GENERAL (CONFIDENTIAL, xem ghi
+  # chú ở nhánh trên). Vẫn giữ làm tín hiệu y tế hợp lệ (không xóa hẳn) vì
+  # khi đứng cùng "chẩn đoán:"/ngữ cảnh dương tính thật vẫn nên CONFIDENTIAL
+  # như mọi chẩn đoán khác — chỉ không còn tự động SECRET không gate nữa.
+  - regex: '(?i)bệnh\s*di\s*truyền'
+    description: "Bệnh di truyền (nhắc chung, không phân biệt phủ định) — HEALTH_GENERAL"
+    confidence: 0.75
+    context_required: false
+    override_level: CONFIDENTIAL
+
+  # HEALTH_RESTRICTED (tiếp) — khám nghiệm tử thi/nguyên nhân tử vong: đây
+  # chính là hoạt động "pháp y" cụ thể (dù văn bản không dùng đúng 2 chữ
+  # "pháp y") — xác nhận qua hồ sơ bồi thường tử vong bảo hiểm thật.
+  # KHÔNG dùng "giấy chứng tử"/"trích lục khai tử" đứng riêng: đã thử và
+  # xác nhận qua eval_confusion.go (--domain insurance) đây là điều khoản
+  # THỦ TỤC phổ biến trong MỌI hợp đồng bảo hiểm nhân thọ CONFIDENTIAL bình
+  # thường (VD: "Hồ sơ yêu cầu gồm: Giấy chứng tử (NẾU tử vong)...") — không
+  # phải bằng chứng có giấy chứng tử thật. "khám nghiệm tử thi"/"nguyên nhân
+  # tử vong" cụ thể hơn nhiều (chỉ xuất hiện khi THẬT SỰ có ca tử vong đang
+  # xử lý), giữ lại 2 cụm này.
+  - regex: '(?i)(?:khám\s*nghiệm\s*tử\s*thi|nguyên\s*nhân\s*tử\s*vong)'
+    description: "Khám nghiệm tử thi/nguyên nhân tử vong — HEALTH_RESTRICTED (pháp y)"
+    confidence: 0.83
+    context_required: false
+    override_level: SECRET
+
+  # HEALTH_GENERAL — bệnh thông thường khác, chỉ CONFIDENTIAL theo tài liệu
+  # (đối chiếu test case gốc: "chẩn đoán viêm phổi" = Confidential, không
+  # phải mọi tên bệnh đều tối mật, chỉ nhóm kỳ thị cao ở trên mới vậy).
+  - regex: '(?i)(?:ung\s*thư|cancer|u\s*ác\s*tính|malignant|viêm\s*gan\s*[ABCDE]|hepatitis|lao\s*phổi|tuberculosis|tiểu\s*đường|diabetes|tim\s*mạch|cardiovascular|đột\s*quỵ|stroke|thận\s*mãn|chronic\s*kidney|suy\s*thận|renal\s*failure)'
+    description: "Tên bệnh thông thường (ung thư, tiểu đường, tim mạch, ...) — HEALTH_GENERAL"
     confidence: 0.82
     context_required: true
+    override_level: CONFIDENTIAL
 
-  # Đơn thuốc / Prescription
+  # Đơn thuốc / Prescription (HEALTH_GENERAL)
   - regex: '(?i)(?:đơn\s*thuốc|toa\s*thuốc|prescription|thuốc\s*điều\s*trị|medication|dosage|liều\s*dùng)\s*[:=]'
     description: "Đơn thuốc / Prescription (có label)"
     confidence: 0.85
     context_required: false
+    override_level: CONFIDENTIAL
 
   # Mã ICD (International Classification of Diseases) — định danh bệnh chuẩn
+  # (HEALTH_GENERAL — bản thân mã ICD không nói lên mức độ kỳ thị của bệnh)
   - regex: '\b[A-Z]\d{2}(?:\.\d{1,4})?\b'
     description: "Mã ICD-10/ICD-11 (vd: C34.1, F32.0) — chỉ dùng với keyword y tế"
     confidence: 0.70
     context_required: true
+    override_level: CONFIDENTIAL
 
 keywords:
   primary:
     - "bệnh án"
+    - "phiếu khám sức khỏe"
+    - "phân loại sức khỏe"
+    - "kết luận của bác sĩ"
+    - "khám lâm sàng"
+    - "kết quả cận lâm sàng"
+    - "khám nghiệm tử thi"
+    - "nguyên nhân tử vong"
     - "y tế"
     - "sức khỏe"
     - "medical"

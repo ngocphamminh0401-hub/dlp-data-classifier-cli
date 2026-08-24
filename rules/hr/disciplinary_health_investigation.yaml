@@ -1,0 +1,85 @@
+# HR-002 — Biên bản xác minh vi phạm/kỷ luật lao động liên quan đến sức khỏe
+# cá nhân
+# Đặc trưng: biên bản có mã số nhân viên/họ tên đích danh, nội dung xác
+# minh gắn trực tiếp với LÝ DO SỨC KHỎE (giấy nghỉ ốm, chứng từ y tế, tình
+# trạng bệnh) làm căn cứ xử lý kỷ luật/đánh giá hiệu suất. Đây là hồ sơ kỷ
+# luật cá nhân + dữ liệu sức khỏe kết hợp — mức RESTRICTED vì vừa là quy
+# trình nhân sự nội bộ vừa chứa thông tin sức khỏe cá nhân nhạy cảm của
+# người được xác định danh tính rõ ràng.
+#
+# LƯU Ý TRIỂN KHAI: ĐÃ XÓA pattern HR-002b gốc ("Mã NV:"/"Mã nhân viên:" +
+# mã NVxxxxx) và keyword "mã nhân viên". Thử mở rộng regex để khớp cả dạng
+# đầy đủ "Mã nhân viên:" (không chỉ viết tắt "Mã NV:") rồi kiểm chứng trên
+# hr__confidential (dataset thật) — gây HỒI QUY NẶNG: 912/1600 file
+# CONFIDENTIAL bị đẩy sai lên RESTRICTED (88.5%→39.9% accuracy), vì nhãn
+# "Mã nhân viên:" là trường định danh PHỔ BIẾN trong MỌI văn bản nhân sự
+# (kể cả thông báo thay đổi chức danh thông thường, không liên quan kỷ
+# luật/sức khỏe) — không phải tín hiệu đặc trưng cho rule này. Việc thêm
+# "mã nhân viên" vào keywords.primary còn vô hiệu hóa luôn
+# exclude_if_no_keywords cho CẢ 3 pattern còn lại (gần như văn bản HR nào
+# cũng có "Mã nhân viên:" nên luôn thỏa điều kiện keyword-gate). Tín hiệu
+# định danh cá nhân đã có sẵn qua vn_id_001/vn_name_001/dob_001 (rule khác)
+# — không cần lặp lại ở đây; 3 pattern còn lại (biên bản xác minh + vi
+# phạm/kỷ luật, nghỉ ốm bất thường, hội đồng kỷ luật) đã đủ đặc trưng.
+
+id: hr_disciplinary_health_investigation_001
+name: "HR-002 Biên bản xác minh kỷ luật liên quan sức khỏe cá nhân"
+category: hr
+level: RESTRICTED
+weight: 0.85
+priority: 85
+tags: [hr, disciplinary, health_data, pii]
+enabled: true
+
+patterns:
+  - regex: '(?i)bi[êe]n\s*b[ảa]n\s*x[áa]c\s*minh\s*.{0,40}(?:vi\s*ph[ạa]m|k[ỷy]\s*lu[ậa]t)'
+    description: "HR-002a Tiêu đề biên bản xác minh vi phạm/kỷ luật"
+    confidence: 0.85
+    context_required: false
+
+  # Lý do sức khỏe làm căn cứ xác minh/kỷ luật — ĐÃ SIẾT: xác nhận qua
+  # hr_conf_00021/00032/00083/00094.docx (dataset thật, ground truth
+  # CONFIDENTIAL) rằng "nghỉ ốm...nhiều lần" một mình cũng xuất hiện phổ
+  # biến trong ĐÁNH GIÁ HIỆU SUẤT/KPI thường kỳ ("...nghỉ ốm nhiều lần, ảnh
+  # hưởng...KPI theo quy định nội bộ"), không phải chỉ trong biên bản xác
+  # minh kỷ luật như tên rule mô tả — gây 38/1600 file bị đẩy sai lên
+  # RESTRICTED. Nay bắt buộc cụm "nghỉ ốm...bất thường/nhiều lần" phải xuất
+  # hiện GẦN (trong 100 ký tự, 2 chiều vì RE2 không có lookaround) một từ
+  # khóa kỷ luật/xác minh/vi phạm mới coi là "dùng làm căn cứ xử lý kỷ luật"
+  # đúng nghĩa; giữ "giấy xác nhận nghỉ ốm" riêng (thường đi kèm ngữ cảnh hồ
+  # sơ xác minh cụ thể hơn, ít gặp trong đánh giá KPI thường).
+  - regex: '(?i)(?:x[áa]c\s*minh|k[ỷy]\s*lu[ậa]t|vi\s*ph[ạa]m)[\s\S]{0,100}?ngh[ỉi]\s*[ốo]m\s*.{0,30}(?:b[ấa]t\s*th[ưu][ờo]ng|nhi[ềe]u\s*l[ầa]n)|ngh[ỉi]\s*[ốo]m\s*.{0,30}(?:b[ấa]t\s*th[ưu][ờo]ng|nhi[ềe]u\s*l[ầa]n)[\s\S]{0,100}?(?:x[áa]c\s*minh|k[ỷy]\s*lu[ậa]t|vi\s*ph[ạa]m)|gi[ấa]y\s*x[áa]c\s*nh[ậa]n\s*ngh[ỉi]\s*[ốo]m'
+    description: "HR-002c Nghỉ ốm bất thường/nhiều lần gần ngữ cảnh xác minh/kỷ luật, hoặc giấy xác nhận nghỉ ốm"
+    confidence: 0.72
+    context_required: true
+
+  - regex: '(?i)h[ộo]i\s*đ[ồo]ng\s*k[ỷy]\s*lu[ậa]t'
+    description: "HR-002d Hội đồng kỷ luật"
+    confidence: 0.65
+    context_required: true
+
+keywords:
+  primary:
+    - "biên bản xác minh"
+    - "vi phạm quy chế"
+    - "hội đồng kỷ luật"
+    - "giấy xác nhận nghỉ ốm"
+    - "chứng từ nghỉ chế độ"
+  secondary:
+    - "chấm công"
+    - "hiệu suất công việc"
+    - "kpi"
+    - "phòng pháp chế"
+    - "giải trình lý do"
+
+# Cần corroboration: chỉ 1 pattern đơn lẻ (VD chỉ "hội đồng kỷ luật" không
+# kèm bối cảnh sức khỏe) không đủ tin cậy tự động RESTRICTED — cần lặp lại
+# hoặc có rule PII/financial khác ≥ CONFIDENTIAL corroborate trong cùng chunk
+# (identity cá nhân đã có sẵn qua vn_id_001/vn_name_001/dob_001 khác).
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
+false_positive_reduction:
+  min_context_window: 120
+  exclude_if_no_keywords: false

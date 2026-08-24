@@ -1,0 +1,66 @@
+# HR-003 — Trao đổi nội bộ tiết lộ lý do sa thải kèm thuộc tính được bảo vệ
+# (sức khỏe tâm thần/tôn giáo/dân tộc/đảng phái)
+# Mức độ nghiêm trọng CAO NHẤT trong batch: chat nội bộ nêu đích danh nhân
+# viên (tên + mã NV) kèm TỔ HỢP nhiều thuộc tính được bảo vệ trong cùng 1
+# đoạn — chẩn đoán/tình trạng sức khỏe tâm lý từ cơ sở y tế cụ thể, tôn
+# giáo, dân tộc, đảng phái — dùng làm căn cứ cho quyết định sa thải. Đây là
+# combo dữ liệu nhạy cảm cao nhất (special category data) + kênh trao đổi
+# không chính thức (chat, không phải hồ sơ chính thức có kiểm soát truy
+# cập) → RESTRICTED, tương tự logic FIN-015 (kênh sai quy trình) nhưng mức
+# độ thuộc tính nhạy cảm còn cao hơn nên ưu tiên cao hơn trong xếp hạng.
+
+id: hr_internal_chat_protected_attributes_001
+name: "HR-003 Chat nội bộ tiết lộ lý do sa thải kèm thuộc tính được bảo vệ"
+category: hr
+level: RESTRICTED
+weight: 0.92
+priority: 92
+tags: [hr, protected_attributes, health_data, termination, unauthorized_channel]
+enabled: true
+
+patterns:
+  # Lý do sa thải/kỷ luật nêu trong chat, gắn với định danh nhân viên
+  - regex: '(?i)l[ýy]\s*do\s*(?:sa\s*th[ảa]i|k[ỷy]\s*lu[ậa]t)\s*(?:nh[ưu]\s*sau)?\s*[:]?'
+    description: "HR-003a Lý do sa thải/kỷ luật nêu trong hội thoại"
+    confidence: 0.70
+    context_required: true
+
+  # Chẩn đoán/tình trạng sức khỏe tâm lý từ cơ sở y tế cụ thể
+  - regex: '(?i)(?:r[ốo]i\s*lo[ạa]n\s*t[âa]m\s*l[ýy]|k[ếe]t\s*qu[ảa]\s*kh[áa]m\s*s[ứu]c\s*kh[ỏo]e).{0,60}(?:t[ạa]i|ng[àa]y)'
+    description: "HR-003b Chẩn đoán/kết quả khám sức khỏe tâm lý cụ thể"
+    confidence: 0.85
+    context_required: false
+
+  # Tổ hợp lý lịch đảng viên + dân tộc + tôn giáo trong cùng câu
+  - regex: '(?i)đ[ảa]ng\s*vi[êe]n\s*,?\s*d[âa]n\s*t[ộo]c\s*.{0,15},?\s*t[ôo]n\s*gi[áa]o'
+    description: "HR-003c Tổ hợp đảng viên/dân tộc/tôn giáo trong cùng đoạn"
+    confidence: 0.90
+    context_required: false
+
+keywords:
+  primary:
+    - "lý do sa thải"
+    - "hồ sơ kỷ luật"
+    - "rối loạn tâm lý"
+    - "dân tộc"
+    - "tôn giáo"
+    - "đảng viên"
+  secondary:
+    - "khám sức khỏe định kỳ"
+    - "khuyến nghị của bác sĩ"
+    - "mã nv"
+    - "quyết định sa thải"
+    - "bàn giao tài sản"
+
+# Cần corroboration: một dòng nhắc "dân tộc"/"tôn giáo" đơn lẻ trong biểu
+# mẫu nhân sự chuẩn (khai lý lịch thông thường) không nên tự động RESTRICTED.
+# Bắt buộc phải đi kèm NGỮ CẢNH xử lý kỷ luật/sa thải + ít nhất 1 thuộc
+# tính sức khỏe/chính trị/tôn giáo/dân tộc CỤ THỂ của cá nhân được nêu tên
+# trong cùng chunk.
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
+false_positive_reduction:
+  min_context_window: 120
+  exclude_if_no_keywords: false

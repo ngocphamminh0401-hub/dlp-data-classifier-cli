@@ -1,0 +1,142 @@
+# ORG-006 — Điều tra gian lận / AML / hình sự (CRIMINAL_AML)
+# Theo tài liệu "Bộ rule kết hợp Regex để phân loại mức độ nhạy cảm", Phần 3
+# Bước 1: CRIMINAL_AML luôn RESTRICTED bất kể ngữ cảnh (GDPR Điều 10) — dữ
+# liệu hình sự/điều tra gian lận rủi ro cao nhất, không cần lặp lại hay có
+# PII/financial đi kèm mới coi là nghiêm trọng. Vì vậy KHÔNG dùng level_gate
+# (khác classified_doc_001) — một lần nhắc "hỗ trợ điều tra", "rửa tiền" đã
+# đủ là bằng chứng tài liệu thuộc hồ sơ điều tra/tuân thủ AML thật.
+#
+# Áp dụng cho mọi domain (không chỉ finance_banking): nhật ký đăng nhập/giao
+# dịch phục vụ điều tra, báo cáo giao dịch đáng ngờ, hồ sơ án tích...
+
+id: fraud_investigation_001
+name: "ORG-006 Điều tra gian lận / AML / hình sự"
+category: org
+level: SECRET
+weight: 0.95
+priority: 93
+tags: [org, criminal_aml, fraud, investigation, aml, security_critical]
+enabled: true
+
+patterns:
+  # "hỗ trợ điều tra" / "phục vụ điều tra" / "phối hợp (công tác) điều tra"
+  - regex: '(?i)(?:hỗ\s*trợ|phục\s*vụ|phối\s*hợp)\s*(?:công\s*tác\s*)?điều\s*tra'
+    description: "ORG-006a hỗ trợ/phục vụ điều tra"
+    confidence: 0.90
+    context_required: false
+
+  # "điều tra gian lận" / "điều tra hình sự" / "điều tra tội phạm" — cho
+  # phép chêm "nghi vấn"/"nghi ngờ" giữa "điều tra" và "gian lận" (VD thực
+  # tế: "BIÊN BẢN ĐIỀU TRA NGHI VẤN GIAN LẬN TRONG YÊU CẦU BỒI THƯỜNG").
+  - regex: '(?i)điều\s*tra\s*(?:nghi\s*vấn\s*|nghi\s*ngờ\s*)?(?:gian\s*lận|hình\s*sự|tội\s*phạm)'
+    description: "ORG-006b điều tra gian lận/hình sự/tội phạm"
+    confidence: 0.93
+    context_required: false
+
+  # ĐÃ CHUYỂN "nghi ngờ/nghi vấn hành vi gian lận" sang fraud_transaction_
+  # flag_001 (CONFIDENTIAL): xác nhận qua ins_int_00027.docx (insurance__
+  # internal, ground truth INTERNAL) rằng cụm này thường xuất hiện trong
+  # ĐOẠN "Lưu ý" chuẩn cuối các quy trình xử lý claim/kiểm soát trục lợi nội
+  # bộ ("Mọi trường hợp nghi ngờ gian lận sẽ thực hiện quy trình kiểm soát
+  # đặc biệt theo quy định hiện hành") — đây là ĐIỀU KHOẢN QUY TRÌNH chung,
+  # không phải bằng chứng có vụ việc cụ thể, y hệt lớp vấn đề "phòng chống
+  # rửa tiền" đã gặp ở finance_banking. Giữ SECRET chỉ cho ORG-006a/006b
+  # (gắn với "điều tra"/"hỗ trợ điều tra" — hàm ý ĐÃ CÓ hành động cụ thể).
+
+  # ĐÃ CHUYỂN "giao dịch đáng ngờ/bất thường" sang rule riêng
+  # (fraud_transaction_flag_001, có level_gate) — xác nhận qua dữ liệu thật
+  # rằng cụm này rất dễ bị PHỦ ĐỊNH ("Không có giao dịch bất thường" trong
+  # chat nội bộ xác nhận sao kê bình thường) mà regex không phân biệt được
+  # (RE2/Go regexp không hỗ trợ lookbehind để loại trừ "không" đứng trước).
+  # Khác các cụm khác trong rule này (rửa tiền/khởi tố/điều tra gian lận —
+  # hiếm khi bị phủ định trong hội thoại thường ngày), "giao dịch bất
+  # thường" đủ phổ biến trong ngữ cảnh XÁC NHẬN KHÔNG CÓ vấn đề gì nên cần
+  # gate riêng thay vì luôn RESTRICTED không điều kiện như phần còn lại.
+
+  # ĐÃ THU HẸP "rửa tiền": xác nhận qua dữ liệu thật (finance_banking__
+  # internal) rằng bare "rửa tiền"/"phòng chống rửa tiền"/"chống rửa tiền"
+  # đẩy sai 113/114 file INTERNAL lên RESTRICTED — 92% trong đó chỉ là nhắc
+  # TÊN CHÍNH SÁCH AML ("chính sách phòng chống rửa tiền", "quy định phòng
+  # chống rửa tiền, khủng bố...") — cụm từ BẮT BUỘC theo luật phải xuất hiện
+  # trong MỌI văn bản tuân thủ/hợp đồng/quy trình ngân hàng, hoàn toàn
+  # không phải bằng chứng có vụ việc rửa tiền thật. Số còn lại cũng chỉ là
+  # điều khoản cấm liệt kê ví dụ ("không nhận giao dịch phục vụ rửa tiền,
+  # khủng bố..."). Y hệt vấn đề "giao dịch bất thường" đã gặp trước đó.
+  #
+  # Giữ SECRET chỉ cho cách diễn đạt CHỈ RÕ có vụ việc cụ thể ("phát hiện
+  # hành vi rửa tiền", "vụ án rửa tiền", "tố giác rửa tiền"). ĐÃ BỎ "nghi
+  # ngờ"/"nghi vấn" khỏi nhánh SECRET này: xác nhận qua fin_int_00044.docx
+  # (báo cáo tuân thủ gửi NHNN) rằng cụm "nghi ngờ rửa tiền" cũng thường
+  # xuất hiện trong câu PHỦ ĐỊNH dạng boilerplate báo cáo định kỳ — "Không
+  # phát sinh trường hợp từ chối giao dịch nghi ngờ rửa tiền" — RE2 không hỗ
+  # trợ lookbehind nên không loại trừ được tiền tố "Không phát sinh..." đứng
+  # trước. Y hệt lớp vấn đề "giao dịch bất thường"/"Không có giao dịch bất
+  # thường" đã gặp — "nghi ngờ/nghi vấn rửa tiền" chuyển xuống
+  # fraud_transaction_flag_001 (CONFIDENTIAL). Giữ lại "phát hiện"/"tố
+  # giác"/"vụ án" ở đây vì các cụm này hiếm khi xuất hiện trong câu phủ định
+  # tự nhiên tương tự ("vụ án rửa tiền" luôn hàm ý CÓ vụ án, không thể phủ
+  # định bằng "không có vụ án" mà vẫn giữ nguyên cụm "vụ án rửa tiền" liền
+  # kề theo cách tự nhiên như "nghi ngờ").
+  - regex: '(?i)(?:ph[áa]t\s*hi[ệe]n|t[ốo]\s*gi[áa]c|v[ụu]\s*[áa]n)\s*(?:h[àa]nh\s*vi\s*)?r[ửu]a\s*ti[ềe]n'
+    description: "ORG-006d Phát hiện/tố giác/vụ án rửa tiền (cụ thể, không phải tên chính sách)"
+    confidence: 0.90
+    context_required: false
+
+  # "BÁO CÁO GIAO DỊCH ĐÁNG NGỜ" — tiêu đề văn bản STR (Suspicious
+  # Transaction Report) CHÍNH THỨC gửi cơ quan chức năng, có số báo cáo
+  # (VD "05/AML/2024/BIDV-BTHCM"), khác hẳn "giao dịch bất thường" nhắc
+  # trong hội thoại thường ngày (dễ bị phủ định, đã chuyển sang
+  # fraud_transaction_flag_001, CONFIDENTIAL).
+  #
+  # ĐÃ SỬA: pattern trước đó dùng (?i) nên khớp cả câu THỐNG KÊ thường gặp
+  # trong báo cáo tuân thủ định kỳ gửi NHNN, VD: "Số lượng báo cáo giao dịch
+  # đáng ngờ đã gửi: 04 báo cáo." — đây chỉ là số liệu tổng hợp trong văn
+  # bản INTERNAL, không phải bản thân STR — gây 56/68 file INTERNAL bị đẩy
+  # sai lên RESTRICTED (xác nhận qua fin_int_00029.docx và tương tự, sub_type
+  # bao_cao_tuan_thu_gui_nhnn). Văn bản STR thật (fin_top_00007.docx) luôn có
+  # cụm này dưới dạng TIÊU ĐỀ VIẾT HOA TOÀN BỘ đứng riêng 1 dòng đầu văn bản
+  # — bỏ (?i), chỉ khớp chữ hoa, để phân biệt tiêu đề chính thức với câu
+  # thống kê thường (viết thường) trong báo cáo tuân thủ nội bộ. File thật
+  # vẫn được bắt kèm qua nhánh số báo cáo AML (luôn đi cùng STR thật).
+  - regex: 'B[ÁA]O\s*C[ÁA]O\s*GIAO\s*D[ỊI]CH\s*Đ[ÁA]NG\s*NG[ỜO]|\d+\s*/\s*AML\s*/\s*\d{4}'
+    description: "ORG-006g Báo cáo giao dịch đáng ngờ (tiêu đề STR viết hoa) / số báo cáo AML"
+    confidence: 0.93
+    context_required: false
+
+  # "khởi tố" / "tiền án" / "tiền sự" / "án tích"
+  # KHÔNG dùng \b quanh cụm này: \b trong Go regexp/RE2 chỉ nhận diện ranh
+  # giới từ theo ASCII ([0-9A-Za-z_]) — 3/4 cụm ở đây bắt đầu/kết thúc bằng
+  # nguyên âm có dấu ("ố", "ự", "á") nên \b không bao giờ khớp ở đó (đã kiểm
+  # chứng: \bán\b không match "tiền án" dù đúng cụm từ). Thay bằng lớp ký tự
+  # Unicode \p{L}\p{N} (RE2 hỗ trợ đầy đủ, không như \b) để giữ đúng ranh
+  # giới từ mà không phụ thuộc ASCII.
+  - regex: '(?i)(?:^|[^\p{L}\p{N}])(?:khởi\s*tố|tiền\s*án|tiền\s*sự|án\s*tích)(?:[^\p{L}\p{N}]|$)'
+    description: "ORG-006e khởi tố / tiền án / tiền sự / án tích"
+    confidence: 0.92
+    context_required: false
+
+keywords:
+  primary:
+    - "hỗ trợ điều tra"
+    - "phục vụ điều tra"
+    - "điều tra gian lận"
+    - "rửa tiền"
+    - "khởi tố"
+    - "tiền án"
+    - "tiền sự"
+    - "án tích"
+  secondary:
+    - "cơ quan điều tra"
+    - "cơ quan công an"
+    - "viện kiểm sát"
+    - "AML"
+    - "phòng chống rửa tiền"
+    - "gian lận"
+    - "khách hàng VIP"
+    - "nhật ký đăng nhập"
+    - "nhật ký giao dịch"
+
+false_positive_reduction:
+  min_context_window: 80
+  exclude_if_no_keywords: false
+  # Pattern đã nhúng cụm từ đặc trưng vào regex → không cần keyword riêng

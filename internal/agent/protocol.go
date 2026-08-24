@@ -61,6 +61,10 @@ const (
 
 	// ActionShutdown yêu cầu agent dừng gracefully.
 	ActionShutdown Action = "shutdown"
+
+	// ActionReloadRules tải lại toàn bộ rules từ disk mà không cần restart agent.
+	// Engine mới được swap vào sau khi compile xong; request đang chạy không bị ảnh hưởng.
+	ActionReloadRules Action = "reload_rules"
 )
 
 // ─── ResponseStatus ───────────────────────────────────────────────────────────

@@ -60,6 +60,15 @@ keywords:
     - "3-digit"
     - "4-digit"
 
+# CVV không có validator thuật toán (không như số thẻ có Luhn) — "CVV: 123"
+# đơn lẻ (vd: dòng code mẫu, tài liệu hướng dẫn PCI-DSS nói VỀ cách xử lý CVV,
+# không phải dữ liệu CVV thật) không nên tự động kết luận cả file SECRET.
+# Cần ≥2 lần xuất hiện hoặc rule khác (điển hình: credit_card_001) cùng có mặt
+# ở mức CONFIDENTIAL+ mới giữ SECRET; ngược lại hạ về CONFIDENTIAL.
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
 false_positive_reduction:
   min_context_window: 100
   exclude_if_no_keywords: false

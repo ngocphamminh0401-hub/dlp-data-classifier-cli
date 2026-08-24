@@ -1,0 +1,104 @@
+# HR-022 — Thư mời nhận việc (Offer Letter) kèm mức lương/đãi ngộ cụ thể
+# Phát hiện qua thực tế: thư mời nhận việc dễ bị phân loại nhầm thành PUBLIC
+# vì cấu trúc/văn phong gần giống thông báo tuyển dụng công khai (JD đăng
+# tuyển, thông cáo tuyển dụng...) — cả hai đều có "kính gửi", "vị trí công
+# việc", "phòng ban". Điểm khác biệt then chốt khiến thư mời PHẢI là
+# CONFIDENTIAL: nó gắn danh tính ỨNG VIÊN CỤ THỂ (Kính gửi Anh/Chị + họ tên)
+# VỚI mức lương/phụ cấp CỤ THỂ bằng số — đây là thỏa thuận đãi ngộ cá nhân,
+# không phải tin tuyển dụng đại chúng (JD tuyển dụng KHÔNG bao giờ có lương
+# cụ thể gắn với 1 cá nhân đã có tên).
+#
+# ĐÃ KIỂM CHỨNG trên dữ liệu thật (hr__confidential, sub_type
+# thu_moi_nhan_viec_offer_letter, 80 file): 61/80 đã đúng CONFIDENTIAL sẵn
+# (nhờ vn_id_001 — thư có kèm CCCD), 16/80 rơi xuống INTERNAL (chỉ khớp
+# email_001), 3/80 hoàn toàn KHÔNG khớp rule nào (PUBLIC) — xác nhận qua
+# hr_conf_00589.docx: thư có "Kính gửi Anh Hoàng Xuân Tuấn" + bảng lương cụ
+# thể "56.000.000 VNĐ" nhưng KHÔNG có CCCD trong thư này (một số công ty chỉ
+# yêu cầu CCCD SAU khi ứng viên xác nhận, không đưa vào thư mời), nên đúng
+# như rule mô tả — không phải PII trực tiếp mà là tổ hợp danh tính+lương.
+#
+# LƯU Ý TRIỂN KHAI:
+# 1) id đổi "hr_022" → "hr_offer_letter_001" (tránh trùng prefix "hr" với
+#    category khi engine tự tách ruleIDPrefix, xem giải thích chi tiết
+#    trong hr/sexual_harassment_complaint.yaml).
+# 2) category đổi "hr_compensation" → "hr" để nhất quán các rule HR khác.
+# 3) ĐÃ XÓA level_gate.min_pattern_matches: không tồn tại trong struct
+#    LevelGate (internal/engine/rules.go). Corroboration thật của engine chỉ
+#    kiểm tra "≥2 lần khớp CÙNG rule" hoặc "rule khác ≥ CONFIDENTIAL trong
+#    cùng chunk" — HR-022a (tiêu đề, context_required:true) + HR-022c (số
+#    lương cụ thể, context_required:false) hoặc HR-022b (tên ứng viên) đã tự
+#    nhiên tạo ≥2 lần khớp trên thư mời thật, nên hành vi thực tế vẫn đúng ý
+#    định "cần tiêu đề CỘNG thêm tên/lương cụ thể" dù cơ chế enforce khác
+#    với comment gốc mô tả.
+# 4) ĐÃ XÓA false_positive_reduction.exclude_patterns: không tồn tại trong
+#    struct FPReduction, bị bỏ qua âm thầm — cùng lý do đã ghi nhiều lần
+#    trong ruleset này. Rủi ro thấp vì level_gate (fallback INTERNAL, không
+#    phải PUBLIC) đã là lưới an toàn: JD/tin tuyển dụng công khai (không có
+#    tên+lương cụ thể đi cùng) nhiều khả năng chỉ khớp HR-022a đơn lẻ (tiêu
+#    đề, context_required:true) → không đủ corroboration → tự hạ INTERNAL,
+#    không bị treo nhầm CONFIDENTIAL.
+
+id: hr_offer_letter_001
+name: "HR-022 Thư mời nhận việc kèm đãi ngộ cá nhân"
+category: hr
+level: CONFIDENTIAL
+weight: 0.85
+priority: 85
+tags: [hr, offer_letter, compensation, candidate_pii]
+enabled: true
+
+patterns:
+  # Tiêu đề thư mời nhận việc
+  - regex: '(?i)th[ưu]\s*mời\s*nhận\s*việc'
+    description: "HR-022a Tiêu đề thư mời nhận việc"
+    confidence: 0.55
+    context_required: true   # riêng tiêu đề không đủ, cần corroborate với lương/tên
+
+  # Dòng "Kính gửi Anh/Chị <Họ Tên>" — xác định người nhận là cá nhân cụ thể
+  - regex: '(?i)kính\s*gửi\s*(?:anh|chị|ông|bà)\s+[A-ZÀ-Ỵ][\wÀ-ỹ]+(?:\s+[A-ZÀ-Ỵ][\wÀ-ỹ]+){1,4}'
+    description: "HR-022b Người nhận thư là ứng viên cụ thể (có họ tên)"
+    confidence: 0.60
+    context_required: true
+
+  # Mức lương/phụ cấp cụ thể bằng số kèm đơn vị VNĐ, gắn với "lương/phụ cấp/thưởng"
+  - regex: '(?i)(?:mức\s*lương|lương\s*(?:cơ\s*bản|gross|net)?|phụ\s*cấp|thưởng)\s*(?:\([^)]*\))?\s*[:\-]?\s*\d{1,3}(?:[.,]\d{3}){1,3}\s*(?:VNĐ|đồng|VND)'
+    description: "HR-022c Số tiền lương/phụ cấp cụ thể"
+    confidence: 0.90
+    context_required: false
+
+  # Yêu cầu nộp giấy tờ cá nhân (CCCD, sơ yếu lý lịch, số tài khoản ngân hàng) — đặc trưng thư mời, không có trong tin tuyển dụng
+  - regex: '(?i)(?:bản\s*sao\s*)?(?:CCCD|CMND).{0,80}(?:sơ\s*yếu\s*lý\s*lịch|số\s*tài\s*khoản\s*ngân\s*hàng)'
+    description: "HR-022d Yêu cầu hồ sơ cá nhân khi nhận việc"
+    confidence: 0.70
+    context_required: false
+
+  # Ngày dự kiến bắt đầu làm việc — gắn với 1 cá nhân, không phải JD đại trà
+  - regex: '(?i)ngày\s*dự\s*kiến\s*bắt\s*đầu\s*làm\s*việc\s*[:=]?\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}'
+    description: "HR-022e Ngày bắt đầu làm việc cụ thể"
+    confidence: 0.65
+    context_required: true
+
+keywords:
+  primary:
+    - "thư mời nhận việc"
+    - "mức lương đề xuất"
+    - "mức lương cơ bản"
+    - "chế độ đãi ngộ"
+  secondary:
+    - "phụ cấp"
+    - "thử việc"
+    - "phòng nhân sự"
+    - "xác nhận đồng ý nhận việc"
+    - "sơ yếu lý lịch"
+
+# Corroboration bắt buộc: xem ghi chú "LƯU Ý TRIỂN KHAI" ở trên — engine chỉ
+# đếm "≥2 lần khớp cùng rule" hoặc "rule khác ≥ CONFIDENTIAL", không phân
+# biệt được rạch ròi "tiêu đề + tên/lương" như comment gốc, nhưng trên thư
+# mời thật vẫn tự nhiên đạt ≥2 lần khớp nên hành vi tương đương ý định.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

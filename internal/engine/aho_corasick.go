@@ -21,6 +21,9 @@ package engine
 
 import (
 	"bytes"
+	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	ahocorasick "github.com/BobuSumisu/aho-corasick"
 )
@@ -36,8 +39,9 @@ type kwEntry struct {
 // KeywordIndex là trie Aho-Corasick đã compile, chứa tất cả keyword từ mọi rule.
 // Xây dựng một lần lúc khởi động qua BuildKeywordIndex(); sau đó read-only.
 type KeywordIndex struct {
-	trie  *ahocorasick.Trie    // nil nếu không có keyword nào
-	kwMap map[string][]kwEntry // lowercase keyword → các rule chứa keyword này
+	trie      *ahocorasick.Trie    // nil nếu không có keyword nào
+	kwMap     map[string][]kwEntry // lowercase keyword → các rule chứa keyword này
+	lowerPool sync.Pool            // tái sử dụng buffer lowercase, tránh alloc 64KB/chunk
 }
 
 // ─── HitMap ───────────────────────────────────────────────────────────────────
@@ -148,7 +152,9 @@ func BuildKeywordIndex(rs *RuleSet) *KeywordIndex {
 		AddStrings(patterns).
 		Build()
 
-	return &KeywordIndex{trie: trie, kwMap: kwMap}
+	ki := &KeywordIndex{trie: trie, kwMap: kwMap}
+	ki.lowerPool.New = func() any { return make([]byte, 0, 64*1024) }
+	return ki
 }
 
 // ─── Scan ─────────────────────────────────────────────────────────────────────
@@ -156,15 +162,16 @@ func BuildKeywordIndex(rs *RuleSet) *KeywordIndex {
 // Scan tìm tất cả keyword trong chunk và trả về HitMap nhóm theo rule ID.
 //
 // Chunk được lowercase trước khi quét (case-insensitive matching).
-// Allocation: ~len(chunk) bytes cho bản lowercase — chấp nhận được với chunk 64KB.
+// Buffer lowercase được lấy từ lowerPool — không cấp phát heap mỗi lần gọi.
 func (ki *KeywordIndex) Scan(chunk []byte) HitMap {
 	hits := make(HitMap)
 	if ki.trie == nil || len(chunk) == 0 {
 		return hits
 	}
 
-	lower := bytes.ToLower(chunk) // case-insensitive: lowercase một lần, dùng nhiều lần
+	lower := ki.getLower(chunk)
 	emits := ki.trie.Match(lower)
+	defer ki.putLower(lower)
 
 	for _, emit := range emits {
 		kw := string(emit.Match()) // keyword đã khớp (đã lowercase)
@@ -189,6 +196,64 @@ func (ki *KeywordIndex) HasAnyKeyword(chunk []byte) bool {
 	if ki.trie == nil || len(chunk) == 0 {
 		return false
 	}
-	lower := bytes.ToLower(chunk)
+	lower := ki.getLower(chunk)
+	defer ki.putLower(lower)
 	return len(ki.trie.Match(lower)) > 0
+}
+
+// getLower lấy buffer từ pool và ghi bản lowercase của chunk vào đó.
+//
+// TRƯỚC ĐÂY: chỉ lowercase byte ASCII (b >= 'A' && b <= 'Z'), với lý do "tất
+// cả keyword đều là Latin hoặc ký tự không có case" — SAI với tiếng Việt:
+// chữ hoa có dấu (Ư, Ơ, Ầ, Ế, Ố, Ộ...) là UTF-8 nhiều byte, giá trị byte đều
+// ngoài range 'A'-'Z' nên giữ nguyên không đổi, không bao giờ khớp keyword
+// viết thường trong kwMap. Hậu quả: MỌI tiêu đề/heading viết hoa có dấu
+// (rất phổ biến trong văn bản tiếng Việt: "BÁO CÁO...", "QUY TRÌNH...",
+// "NHƯỢNG TÁI BẢO HIỂM"...) khiến toàn bộ pattern context_required=true và
+// rule có exclude_if_no_keywords=true trong ĐOẠN ĐÓ bị bỏ qua hoàn toàn dù
+// regex pattern (dùng cờ (?i) của RE2, vốn Unicode-aware) vẫn khớp bình
+// thường — 2 tầng case-folding không nhất quán với nhau.
+//
+// Dùng unicode.ToLower per-rune (qua utf8 decode/encode) thay vì byte thô.
+// Đã xác minh: cặp hoa/thường tiếng Việt giữ nguyên độ dài byte UTF-8 (VD
+// "Ư"/"ư" đều 2 byte) nên offset từ Aho-Corasick vẫn khớp đúng vị trí trong
+// chunk gốc — không cần thay đổi logic offset ở nơi khác.
+func (ki *KeywordIndex) getLower(chunk []byte) []byte {
+	buf := ki.lowerPool.Get().([]byte)
+	if cap(buf) < len(chunk) {
+		buf = make([]byte, len(chunk))
+	}
+	buf = buf[:len(chunk)]
+
+	i := 0
+	for i < len(chunk) {
+		b := chunk[i]
+		if b < utf8.RuneSelf {
+			// Fast path ASCII — tránh chi phí decode rune cho phần lớn văn bản.
+			if b >= 'A' && b <= 'Z' {
+				buf[i] = b + 32
+			} else {
+				buf[i] = b
+			}
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRune(chunk[i:])
+		lr := unicode.ToLower(r)
+		if utf8.RuneLen(lr) == size {
+			utf8.EncodeRune(buf[i:i+size], lr)
+		} else {
+			// Hiếm khi xảy ra (lowercase đổi độ dài byte) — giữ nguyên byte
+			// gốc để không làm lệch offset, chấp nhận bỏ lỡ case-fold cho
+			// riêng ký tự này thay vì phá vỡ toàn bộ vị trí match phía sau.
+			copy(buf[i:i+size], chunk[i:i+size])
+		}
+		i += size
+	}
+	return buf
+}
+
+// putLower trả buffer về pool để tái sử dụng.
+func (ki *KeywordIndex) putLower(buf []byte) {
+	ki.lowerPool.Put(buf[:0])
 }

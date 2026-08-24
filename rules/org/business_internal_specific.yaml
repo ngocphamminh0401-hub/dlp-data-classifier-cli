@@ -1,0 +1,84 @@
+# ORG-009 — Từ vựng nghiệp vụ nội bộ đặc thù ngân hàng/bảo hiểm (BUSINESS_INTERNAL,
+# tách khỏi business_internal_001 vì cần KHÔNG có level_gate)
+#
+# business_internal_001 dùng level_gate (≥2 lần khớp hoặc rule khác ≥
+# CONFIDENTIAL) vì từ vựng ở đó khá chung chung (VD "biểu mẫu", "báo cáo
+# tổng hợp"), dễ chỉ là 1 từ lẻ tẻ trong văn bản PUBLIC. Nhưng các cụm từ ở
+# ĐÂY (VD "NHƯỢNG TÁI BẢO HIỂM", "HỘI ĐỒNG TÍN DỤNG", "PHÊ DUYỆT KHOẢN VAY")
+# thường CHỈ xuất hiện 1 lần duy nhất — ở tiêu đề báo cáo — nên bị gate hạ
+# nhầm về PUBLIC dù đây là từ vựng nghiệp vụ ngân hàng/bảo hiểm rất đặc thù,
+# hiếm khi xuất hiện trong văn bản PUBLIC thật (điều khoản mẫu/thông cáo báo
+# chí) — rủi ro FP thấp hơn hẳn nhóm hành chính chung, nên KHÔNG cần gate.
+
+id: business_internal_specific_001
+name: "ORG-009 Từ vựng nghiệp vụ nội bộ đặc thù ngân hàng/bảo hiểm"
+category: org
+level: INTERNAL
+weight: 0.75
+priority: 39
+tags: [org, business_internal, generic_internal]
+enabled: true
+
+patterns:
+  # Nghiệp vụ tín dụng/rủi ro ngân hàng nội bộ
+  - regex: '(?i)(?:phê\s*duyệt\s*khoản\s*vay|hạn\s*mức\s*phê\s*duyệt|cấp\s*phê\s*duyệt|chính\s*sách\s*quản\s*lý\s*rủi\s*ro|khẩu\s*vị\s*rủi\s*ro|ba\s*tuyến\s*bảo\s*vệ|3\s*tuyến\s*bảo\s*vệ|hội\s*đồng\s*tín\s*dụng|trích\s*lập\s*dự\s*phòng|chỉ\s*tiêu\s*kinh\s*doanh|kế\s*hoạch\s*kinh\s*doanh)'
+    description: "Từ vựng nghiệp vụ tín dụng/rủi ro ngân hàng nội bộ"
+    confidence: 0.68
+    context_required: false
+
+  # Báo cáo KPI/hiệu quả kinh doanh theo chi nhánh — bảng số liệu nội bộ
+  # thuần túy (không PII), vốn không match được bất kỳ pattern nào ở trên vì
+  # không có từ vựng "quy trình/biểu mẫu/báo cáo tổng hợp" chung. Các cụm từ
+  # này đặc trưng cho báo cáo vận hành nội bộ chi nhánh, không xuất hiện
+  # trong báo cáo tài chính PUBLIC đã công bố (dùng số liệu hợp nhất toàn
+  # hàng, không breakdown theo chi nhánh).
+  - regex: '(?i)(?:báo\s*cáo\s*doanh\s*số|bảng\s*tổng\s*hợp\s*doanh\s*số|số\s*dư\s*huy\s*động|dư\s*nợ\s*cho\s*vay|tỷ\s*lệ\s*hoàn\s*thành\s*chỉ\s*tiêu|huy\s*động\s*[-–]\s*cho\s*vay)'
+    description: "Báo cáo/bảng tổng hợp doanh số, huy động, dư nợ theo chi nhánh"
+    confidence: 0.65
+    context_required: false
+
+  # Nghiệp vụ bảo hiểm nội bộ
+  - regex: '(?i)(?:nhượng\s*tái\s*bảo\s*hiểm|báo\s*cáo\s*kinh\s*doanh\s*tổng\s*hợp|minh\s*họa\s*quyền\s*lợi|tỷ\s*lệ\s*hoa\s*hồng|hoa\s*hồng\s*đại\s*lý|kiểm\s*soát\s*trục\s*lợi|khả\s*năng\s*thanh\s*toán|kịch\s*bản\s*tư\s*vấn|đào\s*tạo\s*đại\s*lý)'
+    description: "Từ vựng nghiệp vụ bảo hiểm nội bộ"
+    confidence: 0.68
+    context_required: false
+
+keywords:
+  primary:
+    - "phê duyệt khoản vay"
+    - "hạn mức phê duyệt"
+    - "cấp phê duyệt"
+    - "chính sách quản lý rủi ro"
+    - "khẩu vị rủi ro"
+    - "ba tuyến bảo vệ"
+    - "3 tuyến bảo vệ"
+    - "hội đồng tín dụng"
+    - "trích lập dự phòng"
+    - "chỉ tiêu kinh doanh"
+    - "kế hoạch kinh doanh"
+    - "báo cáo doanh số"
+    - "bảng tổng hợp doanh số"
+    - "số dư huy động"
+    - "dư nợ cho vay"
+    - "tỷ lệ hoàn thành chỉ tiêu"
+    - "nhượng tái bảo hiểm"
+    - "báo cáo kinh doanh tổng hợp"
+    - "minh họa quyền lợi"
+    - "tỷ lệ hoa hồng"
+    - "hoa hồng đại lý"
+    - "kiểm soát trục lợi"
+    - "trục lợi bảo hiểm"
+    - "khả năng thanh toán"
+    - "kịch bản tư vấn"
+    - "đào tạo đại lý"
+  secondary:
+    - "chi nhánh"
+    - "hạn mức"
+    - "rủi ro tín dụng"
+    - "đại lý"
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true
+
+# Không level_gate — xem giải thích đầu file.

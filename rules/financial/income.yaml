@@ -18,19 +18,24 @@ enabled: true
 
 patterns:
   # Lương/thu nhập + số tiền VND — "lương: 20,000,000 đồng"
-  - regex: '(?i)(?:lương|thu\s*nhập|mức\s*lương|lương\s*cơ\s*bản|lương\s*net|lương\s*gross|lương\s*tháng|lương\s*năm|thu\s*nhập\s*ròng|thu\s*nhập\s*gộp)\s*[:=]?\s*[\d.,]+\s*(?:đồng|VND|vnđ|triệu|tr\.?|nghìn|k\b)?'
+  # ĐÃ SỬA BUG: "[\d.,]+" khớp được CHỈ 1 DẤU PHẨY/CHẤM đơn lẻ, không cần chữ
+  # số nào — khiến "hạ bậc lương, đình chỉ công việc..." (câu xử lý vi phạm
+  # trong quy chế bảo mật) khớp nhầm thành "lương" + số tiền. Xác nhận qua
+  # health_int_00530.docx (healthcare__internal, ground truth INTERNAL).
+  # Sửa "\d[\d.,]*" — bắt buộc bắt đầu bằng 1 CHỮ SỐ thật.
+  - regex: '(?i)(?:lương|thu\s*nhập|mức\s*lương|lương\s*cơ\s*bản|lương\s*net|lương\s*gross|lương\s*tháng|lương\s*năm|thu\s*nhập\s*ròng|thu\s*nhập\s*gộp)\s*[:=]?\s*\d[\d.,]*\s*(?:đồng|VND|vnđ|triệu|tr\.?|nghìn|k\b)?'
     description: "Lương/thu nhập VN + số tiền (VND)"
     confidence: 0.85
     context_required: false
 
-  # Thù lao / hoa hồng / thưởng
-  - regex: '(?i)(?:thù\s*lao|hoa\s*hồng|mức\s*thưởng|thưởng\s*KPI|bonus|commission)\s*[:=]?\s*[\d.,]+\s*(?:đồng|VND|vnđ|triệu|tr\.?|%)?'
+  # Thù lao / hoa hồng / thưởng — cùng lỗi/cách sửa như trên
+  - regex: '(?i)(?:thù\s*lao|hoa\s*hồng|mức\s*thưởng|thưởng\s*KPI|bonus|commission)\s*[:=]?\s*\d[\d.,]*\s*(?:đồng|VND|vnđ|triệu|tr\.?|%)?'
     description: "Thù lao / hoa hồng / thưởng + số tiền"
     confidence: 0.82
     context_required: false
 
-  # Salary/income tiếng Anh
-  - regex: '(?i)(?:salary|income|wage|compensation|remuneration|pay\s*rate|annual\s*salary|monthly\s*salary)\s*[:=]?\s*(?:USD|VND|EUR|GBP)?\s*[\d.,]+'
+  # Salary/income tiếng Anh — cùng lỗi/cách sửa như trên
+  - regex: '(?i)(?:salary|income|wage|compensation|remuneration|pay\s*rate|annual\s*salary|monthly\s*salary)\s*[:=]?\s*(?:USD|VND|EUR|GBP)?\s*\d[\d.,]*'
     description: "Salary/income tiếng Anh + số tiền"
     confidence: 0.82
     context_required: false
@@ -66,9 +71,6 @@ keywords:
     - "phiếu lương"
     - "pay slip"
     - "payslip"
-    - "nhân sự"
-    - "HR"
-    - "phòng nhân sự"
     - "bonus"
     - "KPI"
     - "commission"

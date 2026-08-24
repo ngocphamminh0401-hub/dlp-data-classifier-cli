@@ -53,6 +53,11 @@ type RuleMatch struct {
 	Context     string             // Văn bản xung quanh (nội bộ; không trả raw ra ngoài)
 	Value       string             // Giá trị match raw (nội bộ; phục vụ validation/forensics)
 	PatternDesc string             // Mô tả pattern đã khớp (từ YAML)
+
+	// Validated = true nếu match đã qua validator thuật toán (Luhn, CCCD prefix...).
+	// Dùng làm bằng chứng "cứng" trong LevelGate corroboration — validator pass
+	// gần như loại trừ khả năng false positive, khác với match chỉ dựa keyword/regex.
+	Validated bool
 }
 
 // ─── Engine config ────────────────────────────────────────────────────────────
@@ -76,7 +81,11 @@ type EngineConfig struct {
 
 	// EntropyThreshold là ngưỡng Shannon entropy (bits/byte) để phát hiện
 	// dữ liệu mã hóa hoặc secret key. Giá trị > ngưỡng → nghi ngờ SECRET.
-	// Khuyến nghị: 4.5 (mặc định). 0 = tắt entropy check.
+	// Mặc định TẮT (0): entropy văn xuôi tiếng Việt UTF-8 bình thường
+	// (~5.2-5.4 bits/byte) chồng lấn trực tiếp với entropy của secret thật
+	// (JWT ~5.4, base64 key ~5.1) — không có ngưỡng nào tách được 2 nhóm này,
+	// gây over-classify hàng loạt file tiếng Việt bình thường lên CONFIDENTIAL.
+	// Chỉ bật (vd: 6.5+) nếu chắc chắn nội dung quét chủ yếu là ASCII/config.
 	EntropyThreshold float64
 }
 
@@ -86,7 +95,7 @@ func DefaultEngineConfig() EngineConfig {
 		MinConfidence:    0.60,
 		ContextWindow:    200,
 		FastFail:         false,
-		EntropyThreshold: 4.5,
+		EntropyThreshold: 0,
 	}
 }
 
@@ -101,16 +110,55 @@ type Engine struct {
 	compound []CompoundRule // Compound rules (đọc từ YAML, không hardcode)
 	kwIndex  *KeywordIndex  // Aho-Corasick index: tất cả keyword của mọi rule
 	cfg      EngineConfig
+
+	// levelGateRules là rule có level_gate.require_corroboration=true, index theo
+	// RuleID. Cache lúc New() để applyLevelGate có early-return O(1) khi rỗng —
+	// hot path (Scan) không trả giá cho tính năng mà đa số rule không dùng.
+	levelGateRules map[string]*Rule
+
+	// rulesByID index TOÀN BỘ rule (không chỉ rule có gate) theo RuleID —
+	// dùng trong applyLevelGate để tra Tags phục vụ corroboration liên-rule
+	// (xem tagCorroborationTags).
+	rulesByID map[string]*Rule
+}
+
+// tagCorroborationTags: các tag mà applyLevelGate coi là 1 "họ rule" — nếu
+// tổng số match (bất kể RuleID nào trong họ) mang tag này trong cùng chunk
+// đạt ≥2, corroboration được thỏa cho MỌI rule có gate trong họ đó, không chỉ
+// khi cùng 1 RuleID khớp ≥2 lần. Lý do: business_internal_001/hr_internal_
+// business_001/healthcare_internal_business_001/business_internal_specific_001
+// đều là biến thể "văn bản vận hành nội bộ chung" theo domain vocabulary
+// riêng — 1 văn bản ngắn (thông báo/biên bản 1 chủ đề) thường chỉ khớp ĐÚNG
+// 1 rule trong họ 1 lần (VD chỉ khớp healthcare_internal_business_001 ở
+// tiêu đề "Quy chế bảo mật hồ sơ bệnh án", không có tín hiệu nào khác) —
+// trước đây rơi vào PUBLIC oan vì không rule nào tự đạt ≥2 và không rule nào
+// khác đạt ≥CONFIDENTIAL để corroborate (cả 4 rule này đều level INTERNAL,
+// không phải "strong rule" theo nghĩa cũ). Xác nhận qua health_int_00751/
+// 00768/00749/00763/00765/00784.docx (healthcare__internal, ground truth
+// INTERNAL, GOT=PUBLIC trước khi sửa).
+var tagCorroborationTags = map[string]bool{
+	"generic_internal": true,
 }
 
 // New tạo Engine từ RuleSet đã load. Gọi một lần lúc khởi động.
 // RuleSet phải đã được LoadRuleSet() xử lý (regex đã compiled).
 func New(rs *RuleSet, cfg EngineConfig) *Engine {
+	levelGateRules := make(map[string]*Rule)
+	rulesByID := make(map[string]*Rule, len(rs.Rules))
+	for _, r := range rs.Rules {
+		rulesByID[r.ID] = r
+		if r.LevelGate.RequireCorroboration {
+			levelGateRules[r.ID] = r
+		}
+	}
+
 	return &Engine{
-		rules:    rs.Rules,
-		compound: rs.CompoundRules,
-		kwIndex:  BuildKeywordIndex(rs),
-		cfg:      cfg,
+		rules:          rs.Rules,
+		compound:       rs.CompoundRules,
+		kwIndex:        BuildKeywordIndex(rs),
+		cfg:            cfg,
+		levelGateRules: levelGateRules,
+		rulesByID:      rulesByID,
 	}
 }
 
@@ -182,6 +230,23 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 			continue
 		}
 
+		// Enforce min_secondary: bỏ qua rule nếu số secondary keyword < ngưỡng.
+		// Ngăn income rule khớp budget docs chỉ có "lương" mà thiếu BHXH/phiếu lương.
+		if rule.KeywordLogic.MinSecondary > 0 {
+			secCount := 0
+			for _, hit := range hits[rule.ID] {
+				if !hit.Primary {
+					secCount++
+					if secCount >= rule.KeywordLogic.MinSecondary {
+						break
+					}
+				}
+			}
+			if secCount < rule.KeywordLogic.MinSecondary {
+				continue
+			}
+		}
+
 		ruleMatches := matchAllPatterns(chunk, rule, hits, baseOffset, opts)
 		if len(ruleMatches) == 0 {
 			continue
@@ -203,6 +268,19 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 			fastFailed = true
 			break
 		}
+	}
+
+	// ── Step 4.5: Level gate ───────────────────────────────────────────────
+	// Hạ level của match thuộc rule level_gate.require_corroboration=true mà
+	// không có bằng chứng thứ 2 (validator, ≥2 lần khớp, hoặc rule khác cùng
+	// xuất hiện ở level ≥ CONFIDENTIAL). Ngược lại Step 3: có thể HẠ finalLevel,
+	// không chỉ nâng — chống 1 match SECRET đơn lẻ, không kiểm chứng được, quyết
+	// định nhãn nghiêm trọng nhất cho cả file (xem rules.go: LevelGate).
+	//
+	// Bỏ qua khi fastFailed=true: scan đã dừng sớm, allMatches không đầy đủ nên
+	// không đủ dữ liệu để đánh giá corroboration đáng tin cậy.
+	if !fastFailed && len(e.levelGateRules) > 0 && len(allMatches) > 0 {
+		finalLevel = e.applyLevelGate(allMatches)
 	}
 
 	// ── Step 5: Entropy check ─────────────────────────────────────────────
@@ -232,6 +310,145 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 		FastFailed:         fastFailed,
 		CompoundViolations: compoundViolations,
 	}
+}
+
+// ─── Volume escalation ─────────────────────────────────────────────────────────
+
+// VolumeEscalationEvent ghi lại một lần volume escalation đã kích hoạt.
+// Dùng cho audit log — giải thích tại sao FinalLevel bị nâng dù từng match
+// riêng lẻ có level thấp hơn.
+type VolumeEscalationEvent struct {
+	RuleID      string
+	Count       int
+	ResultLevel ClassificationLevel
+}
+
+// ApplyVolumeEscalation nâng ClassificationLevel dựa trên SỐ LẦN mỗi rule khớp
+// trong toàn bộ file (không phải một chunk — xem ghi chú ở scanner.ScanFile).
+//
+// Đây là bước tách biệt khỏi Confidence scoring: confidence của một match phản
+// ánh "match này có phải PII/secret thật không", không đổi theo số lượng match
+// khác. Volume escalation phản ánh một câu hỏi khác — "mức độ rủi ro lộ lọt của
+// CẢ FILE" — 500 email trong 1 file là sự cố nghiêm trọng hơn 1 email lẻ dù mỗi
+// match confidence như nhau. Vì vậy cơ chế này chỉ nâng ClassificationLevel,
+// không chỉnh sửa Confidence của match đã có (giữ nguyên ý nghĩa của điểm số).
+//
+// counts là số match đã qua minConfidence của mỗi ruleID trong TOÀN FILE
+// (caller — scanner — chịu trách nhiệm gộp qua các chunk và dedup).
+//
+// Nguyên tắc No-Downgrade giống compound rules: chỉ nâng level, không hạ.
+func (e *Engine) ApplyVolumeEscalation(counts map[string]int, current ClassificationLevel) (ClassificationLevel, []VolumeEscalationEvent) {
+	maxLevel := current
+	var events []VolumeEscalationEvent
+
+	for _, rule := range e.rules {
+		thresholds := rule.VolumeEscalation.Thresholds
+		if len(thresholds) == 0 {
+			continue
+		}
+		count := counts[rule.ID]
+		if count == 0 {
+			continue
+		}
+
+		// Thresholds đã sort tăng dần theo MinCount lúc load (xem loadRule).
+		// Duyệt từ cao xuống thấp để lấy bậc cao nhất mà count đạt được.
+		for i := len(thresholds) - 1; i >= 0; i-- {
+			t := thresholds[i]
+			if count < t.MinCount {
+				continue
+			}
+			if t.ParsedLevel > maxLevel {
+				maxLevel = t.ParsedLevel
+			}
+			events = append(events, VolumeEscalationEvent{
+				RuleID:      rule.ID,
+				Count:       count,
+				ResultLevel: t.ParsedLevel,
+			})
+			break
+		}
+	}
+
+	return maxLevel, events
+}
+
+// ─── Level gate ─────────────────────────────────────────────────────────────────
+
+// applyLevelGate hạ Level của các RuleMatch thuộc rule có level_gate bật mà
+// thiếu corroboration, rồi trả về finalLevel tính lại (max trên toàn bộ
+// allMatches SAU khi đã hạ). Mutate trực tiếp Level trong allMatches để kết
+// quả trả ra ngoài (Matches, và compound rules chạy sau) nhất quán với
+// finalLevel — người dùng không thấy match "SECRET" trong danh sách trong khi
+// FinalLevel của file lại là CONFIDENTIAL.
+//
+// Phạm vi: chỉ trong 1 chunk (giống compound rules) — xem giới hạn tương tự ở
+// ApplyVolumeEscalation. Corroboration bằng "rule khác cùng chunk" vì vậy có
+// thể bỏ sót trường hợp 2 rule hỗ trợ nhau nằm ở 2 chunk khác nhau của cùng
+// file lớn; chấp nhận được vì mục tiêu là chống FP (thiên về thận trọng hơn),
+// không phải tối đa hóa recall.
+func (e *Engine) applyLevelGate(matches []RuleMatch) ClassificationLevel {
+	counts := make(map[string]int, len(matches))
+	validatedByRule := make(map[string]bool, len(matches))
+	strongRuleIDs := make(map[string]bool, len(matches))
+	tagCounts := make(map[string]int, 4)
+	for _, m := range matches {
+		counts[m.RuleID]++
+		if m.Validated {
+			validatedByRule[m.RuleID] = true
+		}
+		if m.Level >= Confidential {
+			strongRuleIDs[m.RuleID] = true
+		}
+		if r := e.rulesByID[m.RuleID]; r != nil {
+			for _, tag := range r.Tags {
+				if tagCorroborationTags[tag] {
+					tagCounts[tag]++
+				}
+			}
+		}
+	}
+	hasOtherStrongRule := func(ruleID string) bool {
+		for id := range strongRuleIDs {
+			if id != ruleID {
+				return true
+			}
+		}
+		return false
+	}
+	// hasFamilyCorroboration: ≥2 match (bất kể RuleID) cùng mang 1 tag trong
+	// tagCorroborationTags — xem giải thích ở khai báo tagCorroborationTags.
+	hasFamilyCorroboration := func(ruleID string) bool {
+		r := e.rulesByID[ruleID]
+		if r == nil {
+			return false
+		}
+		for _, tag := range r.Tags {
+			if tagCorroborationTags[tag] && tagCounts[tag] >= 2 {
+				return true
+			}
+		}
+		return false
+	}
+
+	finalLevel := Public
+	for i := range matches {
+		m := &matches[i]
+		rule, gated := e.levelGateRules[m.RuleID]
+		if gated {
+			corroborated := validatedByRule[m.RuleID] ||
+				counts[m.RuleID] >= 2 ||
+				hasOtherStrongRule(m.RuleID) ||
+				hasFamilyCorroboration(m.RuleID)
+			if !corroborated && m.Level > rule.LevelGate.ParsedFallbackLevel {
+				m.Level = rule.LevelGate.ParsedFallbackLevel
+			}
+		}
+		if m.Level > finalLevel {
+			finalLevel = m.Level
+		}
+	}
+	return finalLevel
 }
 
 // ─── Compound rules ───────────────────────────────────────────────────────────
@@ -278,6 +495,12 @@ func (e *Engine) applyCompoundRules(matches []RuleMatch, current ClassificationL
 		// min_component_level: MỖI condition phải có match ở level >= ngưỡng.
 		// Tránh false positive: email(INTERNAL) + BIC(INTERNAL) không trigger SECRET.
 		if cr.MinComponentLevel > 0 && !compoundMinLevelSatisfied(cr.Conditions, tagLevels, cr.MinComponentLevel) {
+			continue
+		}
+		// context_conditions: tag phải CÓ MẶT (bất kể level) — dùng để thu hẹp
+		// phạm vi domain mà không đòi hỏi cùng ngưỡng MinComponentLevel cao như
+		// Conditions (xem giải thích ở CompoundRule.ContextConditions).
+		if len(cr.ContextConditions) > 0 && !compoundSatisfied(cr.ContextConditions, tags) {
 			continue
 		}
 

@@ -1,0 +1,119 @@
+# HR-021 — Biên bản điều tra tai nạn lao động (có dữ liệu y tế + danh tính nạn nhân)
+# Phát hiện qua thực tế: cụm "tai nạn lao động" xuất hiện phổ biến trong quy
+# trình ATVSLĐ, nội quy, biển cảnh báo... nên keyword đơn lẻ dễ gây FP theo
+# hướng NGƯỢC lại (quá nhạy). Điểm khiến biên bản THẬT sự RESTRICTED là tổ
+# hợp: danh tính cụ thể (họ tên + ngày sinh) + chẩn đoán/mức độ thương tật y
+# tế + (thường đi kèm) đề xuất bồi thường — đây là hồ sơ cá nhân, không phải
+# tài liệu quy trình.
+#
+# ĐÃ KIỂM CHỨNG trên dữ liệu thật (hr_top_00004.docx, sub_type
+# ho_so_tai_nan_lao_dong):
+# 1) Mô tả thương tật trong biên bản THẬT ở dạng VĂN XUÔI tường thuật ("bị
+#    chấn thương vùng đầu... và gãy xương cánh tay phải"), KHÔNG dùng nhãn
+#    "Chẩn đoán:"/"Tỷ lệ thương tật:" như HR-021b giả định — pattern này có
+#    thể ít khớp trên dữ liệu thật hơn kỳ vọng ban đầu. Giữ nguyên (không
+#    phải lỗi, chỉ là recall thấp hơn dự kiến) vì HR-021a (tiêu đề) +
+#    HR-021d (đề xuất bồi thường/trợ cấp TNLĐ) đã đủ để rule tự corroborate
+#    (2 lần khớp CÙNG rule này thỏa điều kiện level_gate, xem ghi chú dưới)
+#    trên văn bản biên bản thật — xác nhận qua hr_top_00004.docx.
+# 2) ĐÃ XÓA HẲN pattern HR-021c gốc ("Họ và tên:...Ngày sinh:..."): thử sửa
+#    "và" thành tùy chọn rồi kiểm chứng trên hr__confidential (ground truth)
+#    phát hiện HỒI QUY — pattern này chỉ là khối định danh CHUNG (tên+ngày
+#    sinh), xuất hiện phổ biến trong MỌI văn bản nhân sự có định danh cá
+#    nhân (VD hr_conf_00054.docx — đơn khiếu nại tranh chấp lao động, không
+#    phải hồ sơ tai nạn), không đặc trưng riêng cho biên bản TNLĐ — đúng
+#    lớp lỗi "Mã nhân viên" đã gặp và sửa ở
+#    hr/disciplinary_health_investigation.yaml (HR-002b). Danh tính cá nhân
+#    đã có sẵn qua vn_id_001/vn_name_001/dob_001 (rule khác) — không cần
+#    lặp lại ở đây.
+#
+# LƯU Ý TRIỂN KHAI KHÁC:
+# 1) id đổi "hr_021" → "hr_workplace_accident_investigation_001" (tránh
+#    trùng prefix "hr" với category, xem giải thích chi tiết trong
+#    hr/sexual_harassment_complaint.yaml).
+# 2) category đổi "hr_health" → "hr" để nhất quán các rule HR khác.
+# 3) ĐÃ XÓA level_gate.min_pattern_matches: field này KHÔNG tồn tại trong
+#    struct LevelGate (internal/engine/rules.go — chỉ có
+#    RequireCorroboration, FallbackLevel), bị bỏ qua âm thầm. Corroboration
+#    thật sự của engine (applyLevelGate) chỉ kiểm tra: (a) match đã qua
+#    validator, HOẶC (b) rule này khớp ≥2 LẦN trong chunk (bất kể pattern
+#    con nào, không phân biệt "danh tính" khác "y tế" như ý định ban đầu),
+#    HOẶC (c) có rule KHÁC ≥ CONFIDENTIAL trong cùng chunk — nên "yêu cầu 2
+#    NHÓM tín hiệu khác nhau" như comment gốc mô tả không thực sự được thực
+#    thi; trong thực tế nhánh (c) gần như luôn đúng (vn_id_001/dob_001 hầu
+#    như luôn có mặt) nên level_gate khó fallback xuống INTERNAL như kỳ
+#    vọng. Chấp nhận rủi ro này (giống hr_disciplinary_health_investigation
+#    trước đó) vì mẫu biểu trống/tài liệu hướng dẫn thường KHÔNG có đủ cấu
+#    trúc HR-021a/d để khớp ngay từ đầu.
+# 4) ĐÃ XÓA false_positive_reduction.exclude_patterns: không có trong
+#    struct FPReduction, bị bỏ qua âm thầm — cùng lý do đã ghi ở
+#    sexual_harassment_complaint.yaml.
+
+id: hr_workplace_accident_investigation_001
+name: "HR-021 Biên bản điều tra tai nạn lao động kèm dữ liệu y tế nạn nhân"
+category: hr
+level: RESTRICTED
+weight: 0.88
+priority: 88
+tags: [hr, workplace_accident, health_data, compensation]
+enabled: true
+
+patterns:
+  # Tiêu đề biên bản điều tra TNLĐ
+  - regex: '(?i)biên\s*bản\s*điều\s*tra\s*tai\s*nạn\s*lao\s*động'
+    description: "HR-021a Tiêu đề biên bản điều tra TNLĐ"
+    confidence: 0.70
+    context_required: true
+
+  # Chẩn đoán/mức độ thương tật cụ thể — tín hiệu y tế mạnh
+  # ĐÃ XÓA "phẫu thuật" khỏi nhánh kết quả: xác nhận qua health_conf_00076.
+  # docx (healthcare__confidential, ground truth CONFIDENTIAL) rằng
+  # "chẩn đoán...phẫu thuật" khớp nhầm BẤT KỲ ghi chú tái khám sau phẫu
+  # thuật thường quy nào ("Chẩn đoán: Cần theo dõi tình trạng sức khỏe sau
+  # phẫu thuật") — phẫu thuật là hoạt động y tế phổ biến, không đặc thù cho
+  # tai nạn lao động (khác "gãy"/"dập"/"cắt lọc" — mô tả chấn thương cụ thể,
+  # hiếm khi xuất hiện ngoài ngữ cảnh chấn thương thật).
+  #
+  # ĐÃ TÁCH nhánh "%" khỏi "chẩn đoán": xác nhận qua health_int_00640.docx
+  # (healthcare__internal, ground truth INTERNAL) rằng "chẩn đoán ... N%"
+  # khớp nhầm BẤT KỲ ngưỡng chẩn đoán y khoa thông thường nào ("Chẩn đoán
+  # dựa vào chỉ số đường huyết... HbA1c ≥ 6,5%" — tiêu chuẩn chẩn đoán đái
+  # tháo đường trong tài liệu đào tạo, không liên quan tai nạn lao động).
+  # "%" đứng sau nhãn "chẩn đoán" QUÁ CHUNG (mọi ngưỡng xét nghiệm/chỉ số y
+  # khoa đều có dạng này) — chỉ giữ "%" cho các nhãn ĐẶC THÙ THƯƠNG TẬT
+  # (tỷ lệ thương tật/giám định y khoa/tổn thương chức năng); "chẩn đoán"
+  # chỉ còn khớp cùng từ chấn thương cụ thể (gãy/dập/cắt lọc).
+  - regex: '(?i)(?:(?:tỷ\s*lệ\s*thương\s*tật|giám\s*định\s*y\s*khoa|tổn\s*thương\s*chức\s*năng)\s*[:=]?\s*.{0,60}(?:\d{1,3}\s*%|gãy|dập|cắt\s*lọc)|chẩn\s*đoán(?:\s*ban\s*đầu)?\s*[:=]?\s*.{0,60}(?:gãy|dập|cắt\s*lọc))'
+    description: "HR-021b Chẩn đoán/tỷ lệ thương tật cụ thể"
+    confidence: 0.85
+    context_required: false
+
+  # Đề xuất bồi thường/trợ cấp gắn với hồ sơ cá nhân
+  - regex: '(?i)(?:đề\s*xuất\s*)?(?:trách\s*nhiệm\s*)?(?:bồi\s*thường|trợ\s*cấp)\s*(?:tai\s*nạn\s*lao\s*động)'
+    description: "HR-021d Đề xuất bồi thường/trợ cấp TNLĐ"
+    confidence: 0.70
+    context_required: true
+
+keywords:
+  primary:
+    - "biên bản điều tra tai nạn lao động"
+    - "người bị nạn"
+    - "tỷ lệ thương tật"
+    - "giám định y khoa"
+  secondary:
+    - "phẫu thuật"
+    - "nghỉ điều trị nội trú"
+    - "bồi thường"
+    - "trợ cấp"
+    - "bệnh viện"
+
+# Corroboration: xem ghi chú "LƯU Ý TRIỂN KHAI" ở trên về giới hạn thực tế
+# của level_gate (không phân biệt được "2 nhóm tín hiệu khác nhau", chỉ
+# đếm số lần khớp CÙNG rule hoặc có rule khác ≥ CONFIDENTIAL).
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true

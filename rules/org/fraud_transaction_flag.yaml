@@ -1,0 +1,115 @@
+# ORG-010 — "Giao dịch đáng ngờ/bất thường" (tách khỏi fraud_investigation_001)
+#
+# Tách riêng vì cụm từ này dễ bị PHỦ ĐỊNH trong thực tế — xác nhận qua ví dụ
+# thật (finance_banking__confidential, chat nội bộ giao dịch viên):
+#   "Không có giao dịch bất thường. Sau đây là bảng tóm tắt..."
+# → đây là câu XÁC NHẬN AN TOÀN (không có vấn đề gì) khi khách hàng yêu cầu
+# lại sao kê bình thường, nhưng regex chỉ khớp "giao dịch bất thường" và bỏ
+# qua chữ "Không" ngay trước — RE2 (Go regexp) không hỗ trợ lookbehind nên
+# không thể loại trừ tiền tố phủ định trực tiếp trong pattern.
+#
+# Đây đúng là giới hạn "phủ định/ngữ cảnh đảo nghĩa" mà tài liệu "Bộ rule
+# kết hợp Regex" (Phần 7, mục 1) đã cảnh báo trước: "bệnh nhân KHÔNG nhiễm
+# HIV" → keyword match nhưng ý nghĩa ngược lại, cần escalate NEEDS_REVIEW
+# thay vì rule-based tự quyết 100%.
+#
+# Khác các cụm còn lại trong fraud_investigation_001 (rửa tiền/khởi tố/điều
+# tra gian lận — hiếm khi bị phủ định trong hội thoại nghiệp vụ thường
+# ngày), "giao dịch bất thường" đủ mơ hồ/phổ biến trong câu XÁC NHẬN KHÔNG
+# CÓ vấn đề (thủ tục kiểm tra định kỳ khi khách hàng yêu cầu lại sao kê).
+#
+# ĐÃ THỬ level_gate (require_corroboration, fallback CONFIDENTIAL) NHƯNG
+# KHÔNG ĐỦ: cơ chế "hasOtherStrongRule" trong applyLevelGate coi bất kỳ
+# rule nào khác ≥ CONFIDENTIAL trong cùng chunk là đủ corroboration — mà
+# MỌI sao kê tài khoản/thẻ thật đều sẵn có match CONFIDENTIAL từ
+# bank_account_001/fin_credit_card_statement_001/vn_id_001... nên gate luôn
+# tự thỏa mãn dù "giao dịch bất thường" chỉ là câu phủ định đơn thuần —
+# không có tác dụng lọc thực sự trong đúng trường hợp cần lọc nhất.
+#
+# Do RE2 (Go regexp) không hỗ trợ lookbehind nên không thể loại trừ tiền tố
+# phủ định ("không có"/"không phát hiện"...) trực tiếp trong regex, giải
+# pháp thực tế nhất: HẠ HẲN xuống CONFIDENTIAL — cụm "giao dịch đáng ngờ/bất
+# thường" đứng một mình (dù phủ định hay không) không đủ tin cậy để tự động
+# RESTRICTED.
+#
+# BỔ SUNG "rửa tiền" (tên chính sách/điều khoản cấm chung, KHÔNG kèm bằng
+# chứng vụ việc cụ thể) — cùng vấn đề, xác nhận qua dữ liệu thật: 113/114
+# file INTERNAL bị đẩy sai lên RESTRICTED vì "phòng chống rửa tiền"/"chống
+# rửa tiền" là cụm BẮT BUỘC THEO LUẬT phải xuất hiện trong mọi văn bản tuân
+# thủ/hợp đồng/quy trình ngân hàng — không phải bằng chứng có vụ việc thật.
+# fraud_investigation_001 giờ chỉ giữ SECRET cho diễn đạt cụ thể ("phát
+# hiện/nghi ngờ/tố giác/vụ án rửa tiền"), còn lại (tên chính sách, điều
+# khoản liệt kê ví dụ) hạ về đây.
+id: fraud_transaction_flag_001
+name: "ORG-010 Giao dịch đáng ngờ/bất thường / rửa tiền (tên chính sách)"
+category: org
+level: CONFIDENTIAL
+weight: 0.85
+priority: 88
+tags: [org, criminal_aml, fraud, investigation, aml]
+enabled: true
+
+patterns:
+  - regex: '(?i)giao\s*dịch\s*(?:đáng\s*ngờ|bất\s*thường)'
+    description: "ORG-010a giao dịch đáng ngờ/bất thường"
+    confidence: 0.90
+    context_required: false
+
+  # "rửa tiền" bare/tên chính sách — không kèm diễn đạt vụ việc cụ thể
+  # (phát hiện/tố giác/vụ án — các dạng đó vẫn ở fraud_investigation_001)
+  - regex: '(?i)(?:phòng\s*chống\s*|chống\s*)?rửa\s*tiền'
+    description: "ORG-010b rửa tiền (tên chính sách/điều khoản chung)"
+    confidence: 0.85
+    context_required: false
+
+  # "nghi ngờ/nghi vấn rửa tiền" — CHUYỂN TỪ fraud_investigation_001 xuống
+  # đây: xác nhận qua fin_int_00044.docx rằng cụm này cũng thường bị PHỦ
+  # ĐỊNH trong báo cáo tuân thủ định kỳ ("Không phát sinh trường hợp ...
+  # nghi ngờ rửa tiền") mà RE2 không loại trừ được (không hỗ trợ
+  # lookbehind) — cùng lớp vấn đề với "giao dịch bất thường".
+  - regex: '(?i)nghi\s*(?:ngờ|vấn)\s*(?:hành\s*vi\s*)?rửa\s*tiền'
+    description: "ORG-010c nghi ngờ/nghi vấn rửa tiền (dễ bị phủ định)"
+    confidence: 0.85
+    context_required: false
+
+  # "nghi ngờ/nghi vấn hành vi gian lận" — CHUYỂN TỪ fraud_investigation_001
+  # (ORG-006f cũ): xác nhận qua ins_int_00027.docx (insurance__internal)
+  # rằng cụm này phổ biến trong đoạn "Lưu ý" chuẩn cuối quy trình xử lý
+  # claim/kiểm soát trục lợi nội bộ ("Mọi trường hợp nghi ngờ gian lận sẽ
+  # thực hiện quy trình kiểm soát đặc biệt...") — điều khoản quy trình
+  # chung, không phải bằng chứng vụ việc cụ thể. Cùng lớp vấn đề với "rửa
+  # tiền"/"giao dịch bất thường" ở trên.
+  - regex: '(?i)nghi\s*(?:ngờ|vấn)\s*(?:hành\s*vi\s*)?gian\s*lận'
+    description: "ORG-010d nghi ngờ/nghi vấn hành vi gian lận (điều khoản quy trình chung)"
+    confidence: 0.85
+    context_required: false
+
+keywords:
+  primary:
+    - "giao dịch đáng ngờ"
+    - "giao dịch bất thường"
+    - "rửa tiền"
+    - "phòng chống rửa tiền"
+    - "nghi ngờ gian lận"
+    - "nghi vấn gian lận"
+  secondary:
+    - "cơ quan điều tra"
+    - "AML"
+    - "nhật ký giao dịch"
+
+false_positive_reduction:
+  min_context_window: 80
+  exclude_if_no_keywords: false
+
+# Thêm level_gate (fallback INTERNAL): xác nhận qua fin_int_00036.docx
+# (finance_banking__internal, ground truth INTERNAL — tài liệu đào tạo/demo
+# nội bộ) rằng "giao dịch đáng ngờ" cũng xuất hiện dạng THỐNG KÊ DASHBOARD
+# ("Số lượng cảnh báo giao dịch đáng ngờ: 21") trong báo cáo tuân thủ/tài
+# liệu đào tạo giao dịch viên — không phải case cụ thể. Đã kiểm chứng an
+# toàn: 72/72 file CONFIDENTIAL thật dùng rule này đều co-occur với rule
+# CONFIDENTIAL khác (71 với bank_account_001) nên vẫn tự corroborate đúng;
+# chỉ các mention thống kê/demo đơn lẻ (không PII/tài khoản thật đi kèm)
+# mới bị hạ về INTERNAL.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL

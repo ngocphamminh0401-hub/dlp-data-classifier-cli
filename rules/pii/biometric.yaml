@@ -17,29 +17,42 @@ tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13]
 enabled: true
 
 patterns:
-  # Từ khóa sinh trắc học trực tiếp — xuất hiện trong file = cực nguy hiểm
+  # Từ khóa sinh trắc học trực tiếp — CHỈ là nhắc đến chủ đề (vd: PR ngân
+  # hàng "xác thực khuôn mặt bằng công nghệ AI" khi quảng cáo tính năng
+  # eKYC), KHÔNG chứng minh có dữ liệu sinh trắc THẬT trong file. Theo tài
+  # liệu "Bộ rule kết hợp Regex" (Phần 2 — flag BIOMETRIC_GENETIC): chỉ
+  # keyword sinh trắc → CONFIDENTIAL, không tự động SECRET. Từng để SECRET +
+  # context_required=false đã đôn nhầm 1 thông cáo báo chí PUBLIC lên
+  # RESTRICTED (finance_banking__public/fin_pub_00008) — thực tế chỉ có
+  # pattern #2 (template/embedding CÓ giá trị base64 thật) mới là bằng chứng
+  # dữ liệu sinh trắc thật, giữ SECRET.
   - regex: '(?i)(?:fingerprint|vân\s*tay|dấu\s*vân\s*tay|face\s*id|face\s*recognition|nhận\s*dạng\s*khuôn\s*mặt|facial\s*recognition|sinh\s*trắc\s*học|biometric(?:\s*data)?|iris\s*scan|võng\s*mạc|retina|voice\s*print|nhận\s*dạng\s*giọng\s*nói)'
-    description: "Từ khóa sinh trắc học trực tiếp"
+    description: "Từ khóa sinh trắc học trực tiếp (chỉ nhắc chủ đề)"
     confidence: 0.88
     context_required: false
+    override_level: CONFIDENTIAL
 
   # Template / embedding sinh trắc (chuỗi base64/hex dài sau label sinh trắc)
+  # — đây mới là bằng chứng CÓ dữ liệu sinh trắc thật, giữ nguyên SECRET.
   - regex: '(?i)(?:fingerprint|biometric|face)\s*(?:template|data|hash|embedding|vector|feature)\s*[:=]\s*[A-Za-z0-9+/=]{20,}'
     description: "Template / embedding dữ liệu sinh trắc học"
     confidence: 0.95
     context_required: false
+    override_level: SECRET
 
-  # Dữ liệu CCCD chip — chứa sinh trắc học nhúng
+  # Dữ liệu CCCD chip — chỉ nhắc chủ đề, tương tự pattern #1 → CONFIDENTIAL
   - regex: '(?i)(?:dữ\s*liệu\s*chip|chip\s*data|contactless\s*chip|NFC\s*data|thẻ\s*chip|ePassport\s*data|eMRTD)'
     description: "Dữ liệu chip CCCD / hộ chiếu điện tử (chứa sinh trắc)"
     confidence: 0.85
     context_required: false
+    override_level: CONFIDENTIAL
 
-  # FaceID / TouchID trong ngữ cảnh xác thực kỹ thuật số
+  # FaceID / TouchID trong ngữ cảnh xác thực kỹ thuật số — chỉ nhắc chủ đề
   - regex: '(?i)(?:touchid|touch\s*id|faceid|face\s*id|windows\s*hello|liveness\s*detection|anti-spoofing|nhận\s*dạng\s*sinh\s*trắc)'
     description: "Xác thực sinh trắc kỹ thuật số (TouchID, FaceID, Windows Hello)"
     confidence: 0.82
     context_required: true
+    override_level: CONFIDENTIAL
 
 keywords:
   primary:

@@ -26,14 +26,81 @@ import (
 	"github.com/vnpt/dlp-classifier/internal/scanner"
 )
 
+// --- memory tracking ---
+
+type memPeak struct {
+	heapAlloc uint64 // peak heap in-use (bytes allocated, GC không tính dead objects)
+	heapSys   uint64 // peak heap virtual address space từ OS
+	totalSys  uint64 // peak tổng bộ nhớ OS cấp cho process (heap + stack + metadata)
+	numGC     uint32 // số lần GC chạy trong quá trình scan
+}
+
+// sampleMemory chạy trong goroutine riêng, lấy mẫu MemStats mỗi 50ms
+// và trả về peak khi channel done đóng.
+func sampleMemory(done <-chan struct{}) memPeak {
+	var peak memPeak
+	var ms runtime.MemStats
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	sample := func() {
+		runtime.ReadMemStats(&ms)
+		if ms.HeapAlloc > peak.heapAlloc {
+			peak.heapAlloc = ms.HeapAlloc
+		}
+		if ms.HeapSys > peak.heapSys {
+			peak.heapSys = ms.HeapSys
+		}
+		if ms.Sys > peak.totalSys {
+			peak.totalSys = ms.Sys
+		}
+		peak.numGC = ms.NumGC
+	}
+	for {
+		select {
+		case <-tick.C:
+			sample()
+		case <-done:
+			sample() // đọc lần cuối khi scan kết thúc
+			return peak
+		}
+	}
+}
+
+func fmtBytes(b uint64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%.2f GB", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%.2f MB", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%.2f KB", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
 // --- mapping nhãn thư mục → level scanner ---
 
 // folderToExpected ánh xạ tên thư mục sang nhãn chuẩn (dùng so sánh).
+// Hỗ trợ hai quy ước đặt tên:
+//   - L1_PUBLIC, L2_INTERNAL, ...        (quy ước testdata nội bộ)
+//   - class_1_PUBLIC, class_2_INTERNAL, ... (quy ước generate_dlp_files.py)
 var folderToExpected = map[string]string{
-	"L1_PUBLIC":        "PUBLIC",
-	"L2_INTERNAL":      "INTERNAL",
-	"L3_CONFIDENTIAL":  "CONFIDENTIAL",
-	"L4_RESTRICTED":    "RESTRICTED",
+	// tên đầy đủ
+	"L1_PUBLIC":            "PUBLIC",
+	"L2_INTERNAL":          "INTERNAL",
+	"L3_CONFIDENTIAL":      "CONFIDENTIAL",
+	"L4_RESTRICTED":        "RESTRICTED",
+	// tên ngắn (L1/L2/L3/L4)
+	"L1": "PUBLIC",
+	"L2": "INTERNAL",
+	"L3": "CONFIDENTIAL",
+	"L4": "RESTRICTED",
+	// quy ước generate_dlp_files.py
+	"class_1_PUBLIC":       "PUBLIC",
+	"class_2_INTERNAL":     "INTERNAL",
+	"class_3_CONFIDENTIAL": "CONFIDENTIAL",
+	"class_4_RESTRICTED":   "RESTRICTED",
 }
 
 // scannerLevel chuẩn hoá output scanner về cùng không gian nhãn.
@@ -87,10 +154,19 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, "Loaded %d files for evaluation\n", len(entries))
 
+	memDone := make(chan struct{})
+	memCh := make(chan memPeak, 1)
+	go func() { memCh <- sampleMemory(memDone) }()
+
+	wallStart := time.Now()
 	results := runEval(entries, *workers)
+	wallElapsed := time.Since(wallStart)
+
+	close(memDone)
+	mem := <-memCh
 
 	// --- in kết quả ---
-	printResults(results, *wrongOnly)
+	printResults(results, *wrongOnly, wallElapsed, mem)
 
 	if *outputCSV != "" {
 		if err := writeCSV(*outputCSV, results); err != nil {
@@ -131,7 +207,11 @@ func collectEntries(datasetDir string, includeEdge bool) ([]entry, error) {
 	}
 
 	if includeEdge {
+		// hỗ trợ cả "EDGE_CASES" và "edge"
 		edgeDir := filepath.Join(datasetDir, "EDGE_CASES")
+		if _, err := os.Stat(edgeDir); os.IsNotExist(err) {
+			edgeDir = filepath.Join(datasetDir, "edge")
+		}
 		fis, err := os.ReadDir(edgeDir)
 		if err == nil {
 			// EDGE_CASES không có nhãn chính xác nên bỏ qua metrics, chỉ in kết quả
@@ -203,7 +283,7 @@ func runEval(entries []entry, numWorkers int) []evalResult {
 
 // --- print ---
 
-func printResults(results []evalResult, wrongOnly bool) {
+func printResults(results []evalResult, wrongOnly bool, wallElapsed time.Duration, mem memPeak) {
 	levels := []string{"PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"}
 
 	// Tổng
@@ -353,6 +433,42 @@ func printResults(results []evalResult, wrongOnly bool) {
 	}
 	tw4.Flush()
 
+	// --- thời gian chạy ---
+	var totalScanDur time.Duration
+	var minDur, maxDur time.Duration
+	var slowestFile string
+	first := true
+	for _, r := range results {
+		if r.isEdge {
+			continue
+		}
+		totalScanDur += r.duration
+		if first || r.duration < minDur {
+			minDur = r.duration
+			first = false
+		}
+		if r.duration > maxDur {
+			maxDur = r.duration
+			slowestFile = r.relPath
+		}
+	}
+	var avgDur time.Duration
+	var throughput float64
+	if total > 0 {
+		avgDur = totalScanDur / time.Duration(total)
+		throughput = float64(total) / wallElapsed.Seconds()
+	}
+
+	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
+	fmt.Println("║                THỜI GIAN CHẠY                       ║")
+	fmt.Println("╚══════════════════════════════════════════════════════╝")
+	fmt.Printf("  Tổng thời gian (wall)  : %s\n", wallElapsed.Round(time.Millisecond))
+	fmt.Printf("  Tổng CPU scan          : %s\n", totalScanDur.Round(time.Millisecond))
+	fmt.Printf("  Trung bình / file      : %s\n", avgDur.Round(time.Microsecond))
+	fmt.Printf("  Nhanh nhất             : %s\n", minDur.Round(time.Microsecond))
+	fmt.Printf("  Chậm nhất              : %s  (%s)\n", maxDur.Round(time.Millisecond), slowestFile)
+	fmt.Printf("  Throughput             : %.1f files/s\n", throughput)
+
 	// --- tổng kết ---
 	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
 	fmt.Println("║                   TỔNG KẾT                          ║")
@@ -365,6 +481,7 @@ func printResults(results []evalResult, wrongOnly bool) {
 	}
 	fmt.Printf("  Accuracy           : %.2f%%\n", accuracy)
 	fmt.Printf("  Macro F1           : %.2f%%\n", macroF1*100)
+	fmt.Printf("  Thời gian (wall)   : %s\n", wallElapsed.Round(time.Millisecond))
 
 	if wrongOnly {
 		return

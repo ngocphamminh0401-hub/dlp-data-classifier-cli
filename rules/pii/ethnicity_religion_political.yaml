@@ -1,0 +1,101 @@
+# PII-010 — Dân tộc / Tôn giáo / Quan điểm chính trị / Đảng viên / Công đoàn
+# (flag ETHNICITY_RELIGION_POLITICAL theo tài liệu "Bộ rule kết hợp Regex")
+# GDPR Điều 9 — special category data (chủng tộc, tôn giáo, quan điểm
+# chính trị). Thường gặp trong CV/sơ yếu lý lịch tiếng Việt truyền thống.
+#
+# QUYẾT ĐỊNH TEAM BAN ĐẦU (tài liệu, mục 6.1, lúc CHƯA có dataset hr/
+# healthcare thật): giữ nguyên CONFIDENTIAL, KHÔNG tự động nâng RESTRICTED
+# dù kết hợp nhiều trường hay lặp lại nhiều lần.
+#
+# ĐÃ ĐẢO NGƯỢC quyết định trên sau khi có dataset hr__* thật: xác nhận qua
+# eval_confusion.go rằng 597/1600 file hr__top_secret (nhiều sub_type: hồ sơ
+# sức khỏe NV, sơ yếu lý lịch, quyết định kỷ luật/sa thải, lương thưởng điều
+# hành, tai nạn lao động, hồ sơ chuyển công an, khiếu nại quấy rối, xét kết
+# nạp đảng, biên bản điều tra nội bộ...) đều là hồ sơ nhân viên có TÊN THẬT
+# kết hợp Dân tộc/Tôn giáo + CCCD/tài chính/sức khỏe — đúng mẫu "combination
+# amplification" tài liệu gốc mô tả, không phải trường hợp hiếm. Đã xác nhận
+# an toàn cross-domain: quét toàn bộ hr__confidential (1429 file ground
+# truth CONFIDENTIAL) chỉ 1 file khớp rule này, và đó là do bug phủ định đã
+# sửa bên dưới — sau khi sửa, rủi ro escalate nhầm gần như 0. Xem compound
+# rules "Ethnicity/Religion + Identity/Financial/Health = SECRET" trong
+# rules/rules.yaml.
+#
+# Thiết kế chống FP: bắt buộc dạng "Nhãn: giá trị" (giống pattern "Chẩn
+# đoán:" trong health.yaml) — KHÔNG match keyword trần trụi để tránh dính
+# văn bản CSR/chính sách đa dạng chung chung ("chúng tôi tôn trọng đa dạng
+# tôn giáo và dân tộc").
+
+id: ethnicity_religion_political_001
+name: "PII-010 Dân tộc / Tôn giáo / Đảng viên / Lý lịch chính trị"
+category: pii
+level: CONFIDENTIAL
+weight: 0.85
+priority: 65
+tags: [pii, ethnicity_religion_political, sensitive_category, ndctn13]
+enabled: true
+
+patterns:
+  # "Dân tộc: Kinh" / "Dân tộc: Tày" — trường field trong CV/CCCD/sơ yếu lý lịch
+  - regex: '(?i)dân\s*tộc\s*[:=]\s*\S+'
+    description: "Trường Dân tộc (dạng nhãn:giá trị)"
+    confidence: 0.85
+    context_required: false
+
+  # "Tôn giáo: Không" / "Tôn giáo: Công giáo"
+  - regex: '(?i)tôn\s*giáo\s*[:=]\s*\S+'
+    description: "Trường Tôn giáo (dạng nhãn:giá trị)"
+    confidence: 0.85
+    context_required: false
+
+  # "Đảng viên: Có/Không" — phân biệt với "đảng ủy"/"ban chấp hành đảng" (tổ
+  # chức, không phải trường cá nhân) nhờ yêu cầu dấu ":"/"=" ngay sau
+  - regex: '(?i)(?:đảng\s*viên|tình\s*trạng\s*đảng)\s*[:=]\s*\S+'
+    description: "Trường Đảng viên (dạng nhãn:giá trị)"
+    confidence: 0.85
+    context_required: false
+
+  # "Lý lịch chính trị: ..." — trường phổ biến trong sơ yếu lý lịch VN
+  - regex: '(?i)lý\s*lịch\s*chính\s*trị\s*[:=]'
+    description: "Trường Lý lịch chính trị"
+    confidence: 0.85
+    context_required: false
+
+  # ĐÃ BỎ pattern văn xuôi không nhãn ("\b(dân tộc|tôn giáo)\b", confidence
+  # 0.55): xác nhận qua hr_conf_00201.docx (dataset thật) rằng nhánh này bắt
+  # nhầm câu PHỦ ĐỊNH "Hồ sơ không chứa trường thông tin về dân tộc, tôn
+  # giáo hoặc đảng viên..." — RE2 không hỗ trợ lookbehind nên không loại trừ
+  # được tiền tố "không chứa" đứng trước. Compound rule mới (rules.yaml:
+  # Ethnicity/Religion + Identity/Financial/Health = SECRET) giờ dùng rule
+  # này làm điều kiện leo thang lên RESTRICTED, nên false positive ở đây có
+  # hậu quả nghiêm trọng hơn trước (không còn "vô hại" vì dừng ở CONFIDENTIAL
+  # nữa) — giữ lại 4 pattern "Nhãn: giá trị" (không bị lỗi phủ định vì
+  # "không chứa dân tộc:" không phải cách viết field tự nhiên) là đủ, đúng
+  # với mọi ví dụ thật đã khảo sát (luôn ở dạng "Dân tộc: Tày").
+
+keywords:
+  primary:
+    - "dân tộc"
+    - "tôn giáo"
+    - "đảng viên"
+    - "tín ngưỡng"
+    - "lý lịch chính trị"
+    - "sơ yếu lý lịch"
+  secondary:
+    - "Kinh"
+    - "Tày"
+    - "Thái"
+    - "Mường"
+    - "Công giáo"
+    - "Phật giáo"
+    - "đảng ủy"
+    - "đoàn viên"
+    - "công đoàn"
+    - "thành phần gia đình"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true
+
+# Không level_gate, không volume_escalation ở BẢN THÂN rule này — việc leo
+# thang lên RESTRICTED khi kết hợp identity/financial/health được xử lý qua
+# compound_rules (rules/rules.yaml), không phải qua cơ chế trong file này.

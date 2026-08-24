@@ -27,6 +27,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -81,11 +82,20 @@ func (s *Server) serveUnix() error {
 // handleUnixConn xử lý vòng lặp request–response trên một kết nối Unix socket.
 // Kết nối bị đóng khi: client disconnect, framing error, hoặc idle timeout.
 func (s *Server) handleUnixConn(conn net.Conn) {
+	// connCtx được cancel khi connection đóng (defer connCancel).
+	// Mọi scan đang chạy trên connection này sẽ dừng sớm thay vì chạy đến hết —
+	// tránh lãng phí CPU khi client ngắt kết nối giữa chừng.
+	connCtx, connCancel := context.WithCancel(s.ctx)
+	defer connCancel()
 	defer conn.Close()
 
 	remote := conn.RemoteAddr().String()
 	slog.Debug("agent: kết nối mới", "remote", remote)
 	defer slog.Debug("agent: kết nối đóng", "remote", remote)
+
+	// mu bảo vệ writeMessage khỏi concurrent write (ActionShutdown dùng goroutine).
+	// Hoisted ra ngoài loop: tái sử dụng qua nhiều request trên cùng connection.
+	var mu sync.Mutex
 
 	for {
 		// Đặt deadline đọc để phát hiện client bị treo/mất kết nối.
@@ -113,9 +123,7 @@ func (s *Server) handleUnixConn(conn net.Conn) {
 			"path", req.Path,
 		)
 
-		// mu bảo vệ ghi đồng thời nếu dispatch spawn goroutine (vd: shutdown async).
-		var mu sync.Mutex
-		s.dispatch(req, func(resp *Response) error {
+		s.dispatch(connCtx, req, func(resp *Response) error {
 			mu.Lock()
 			defer mu.Unlock()
 			return writeMessage(conn, resp)

@@ -1,0 +1,52 @@
+# FIN-013 — Sao kê tài khoản thanh toán / lịch sử giao dịch cá nhân
+# Khác FIN-012: không có số thẻ/hạn mức tín dụng, nhưng có số dư theo thời
+# gian thực (số dư sau từng giao dịch) — cho phép suy ra thu nhập, lương,
+# thói quen chi tiêu, đối tác chuyển khoản của một cá nhân cụ thể.
+
+id: fin_account_statement_001
+name: "FIN-013 Sao kê tài khoản thanh toán cá nhân"
+category: financial
+level: CONFIDENTIAL
+weight: 0.75
+priority: 75
+tags: [financial, bank_account, statement, pii]
+enabled: true
+
+patterns:
+  - regex: '(?i)sao\s*kê\s*(?:tài\s*khoản|giao\s*dịch)\s*(?:thanh\s*toán|cá\s*nhân)?'
+    description: "FIN-013a Tiêu đề sao kê tài khoản"
+    confidence: 0.88
+    context_required: false
+
+  # Số tài khoản dạng che một phần
+  - regex: '(?:số\s*tài\s*khoản|tài\s*khoản)\s*[:]?\s*\*{2,}\d{3,6}\b'
+    description: "FIN-013b Số tài khoản che một phần"
+    confidence: 0.82
+    context_required: false
+
+  # Cột số dư sau giao dịch kèm số tiền lặp lại nhiều dòng (đặc trưng bảng kê)
+  - regex: '(?i)số\s*dư\s*(?:sau\s*GD|đầu\s*kỳ|cuối\s*kỳ)\s*[:]?\s*[\d.,]+\s*(?:VND|VNĐ)'
+    description: "FIN-013c Số dư tài khoản theo giao dịch/kỳ"
+    confidence: 0.78
+    context_required: false
+
+keywords:
+  primary:
+    - "sao kê tài khoản"
+    - "số dư đầu kỳ"
+    - "số dư cuối kỳ"
+    - "ghi nợ"
+    - "ghi có"
+  secondary:
+    - "nhận lương"
+    - "chuyển khoản"
+    - "rút tiền ATM"
+    - "CIF"
+
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false

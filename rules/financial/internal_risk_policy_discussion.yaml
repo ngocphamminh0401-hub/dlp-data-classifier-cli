@@ -1,0 +1,51 @@
+# FIN-019 — Trao đổi nội bộ xây dựng chính sách/khung quản lý rủi ro
+# Đặc trưng: chat/thảo luận giữa các cấp quản lý (Trưởng phòng, Chuyên
+# viên) về nội dung CHÍNH SÁCH/KHUNG quản trị rủi ro ở mức khái niệm (quy
+# trình nhận diện, tiêu chí đánh giá, phân tầng mức độ) — không gắn với
+# khách hàng, giao dịch, hay chi nhánh cụ thể nào. Mức INTERNAL vì là công
+# việc xây dựng chính sách thường quy của Ban Quản lý Rủi ro.
+
+id: fin_internal_risk_policy_discussion_001
+name: "FIN-019 Trao đổi nội bộ xây dựng chính sách quản lý rủi ro"
+category: financial
+level: INTERNAL
+weight: 0.35
+priority: 35
+tags: [financial, internal_process, risk_policy]
+enabled: true
+
+patterns:
+  - regex: '(?i)khung\s*ch[íi]nh\s*s[áa]ch\s*qu[ảa]n\s*l[ýy]\s*r[ủu]i\s*ro'
+    description: "FIN-019a Khung chính sách quản lý rủi ro"
+    confidence: 0.82
+    context_required: false
+
+  - regex: '(?i)nh[ậa]n\s*di[ệe]n\s*r[ủu]i\s*ro\s*t[íi]n\s*d[ụu]ng|ki[ểe]m\s*so[áa]t\s*n[ộo]i\s*b[ộo]'
+    description: "FIN-019b Nhận diện rủi ro tín dụng / kiểm soát nội bộ"
+    confidence: 0.55
+    context_required: true
+
+  - regex: '(?i)ban\s*qu[ảa]n\s*l[ýy]\s*r[ủu]i\s*ro'
+    description: "FIN-019c Ban Quản lý Rủi ro"
+    confidence: 0.55
+    context_required: true
+
+keywords:
+  primary:
+    - "chính sách quản lý rủi ro"
+    - "ban quản lý rủi ro"
+    - "phân tầng mức độ rủi ro"
+    - "kiểm soát nội bộ"
+  secondary:
+    - "phụ lục"
+    - "dự thảo"
+    - "tiêu chí đánh giá rủi ro"
+    - "đề xuất"
+
+level_gate:
+  require_corroboration: false
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

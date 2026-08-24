@@ -52,6 +52,13 @@ keywords:
     - "first name"
     - "tên đầy đủ"
     - "họ tên đầy đủ"
+    # Cột lịch trực khoa/gác dùng chức danh thay "họ tên" (health_int_00660.
+    # docx: "Bác sĩ trực"/"Điều dưỡng trực" thay vì "Họ tên bác sĩ trực" như
+    # health_int_00645.docx) — cùng loại dữ liệu (tên thật, không ẩn danh)
+    # nhưng thiếu keyword "họ tên" khiến context_required không thỏa dù danh
+    # sách tên vẫn hiện diện đầy đủ trong bảng.
+    - "bác sĩ trực"
+    - "điều dưỡng trực"
   secondary:
     - "khách hàng"
     - "người dùng"

@@ -66,6 +66,6 @@ escalation:
     - "quốc phòng"
     - "an ninh quốc gia"
     - "tối mật"
-    - "mật"
+    - "tài liệu mật"
     - "bí mật nhà nước"
   escalate_to: SECRET

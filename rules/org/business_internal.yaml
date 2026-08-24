@@ -1,0 +1,100 @@
+# ORG-007 — Văn bản nghiệp vụ nội bộ thông thường (flag BUSINESS_INTERNAL
+# theo tài liệu "Bộ rule kết hợp Regex", Bước 6: không match flag nào khác
+# nhưng có yếu tố nghiệp vụ nội bộ → INTERNAL, khác PUBLIC mặc định).
+#
+# Vá lỗ hổng phát hiện qua dữ liệu thật: file "báo cáo doanh số chi nhánh"
+# (bảng, không PII, ground-truth INTERNAL) bị chấm PUBLIC vì KHÔNG rule nào
+# khớp cả — watermark.yaml/internal_code.yaml chỉ bắt nhãn "lưu hành nội bộ"
+# tường minh hoặc mã VNPT có cấu trúc, không có detector chung cho "văn bản
+# nghiệp vụ nội bộ thông thường" (quy trình/biểu mẫu/báo cáo tổng hợp).
+#
+# Đây là rule catch-all nên rủi ro FP cao nhất trong toàn bộ ruleset — dùng
+# level_gate thay vì keyword_logic.min_primary (trường min_primary tồn tại
+# trong schema nhưng KHÔNG được engine thực thi — xác nhận qua
+# internal/engine/classifier.go, chỉ min_secondary được check). level_gate
+# yêu cầu ≥2 lần khớp (2 cụm từ khác nhau hoặc lặp lại) HOẶC có rule khác
+# ≥ CONFIDENTIAL trong cùng chunk, nếu không hạ về PUBLIC — tránh 1 từ
+# "quy trình" lẻ tẻ trong văn bản PUBLIC bị flip nhầm thành INTERNAL.
+
+id: business_internal_001
+name: "ORG-007 Văn bản nghiệp vụ nội bộ thông thường"
+category: org
+level: INTERNAL
+weight: 0.70
+priority: 38
+tags: [org, business_internal, generic_internal]
+enabled: true
+
+patterns:
+  - regex: '(?i)quy\s*trình\s*(?:nội\s*bộ|vận\s*hành|hoạt\s*động|phê\s*duyệt|xử\s*lý)'
+    description: "Quy trình nội bộ/vận hành/hoạt động/phê duyệt/xử lý"
+    confidence: 0.65
+    context_required: false
+
+  # "Hệ thống nội bộ" — cụm hay xuất hiện trong email thông báo thay đổi
+  # quy trình nghiệp vụ giữa các phòng ban, không phải nhãn phân loại tài
+  # liệu (đã có ở watermark.yaml) nhưng vẫn là tín hiệu nghiệp vụ nội bộ.
+  - regex: '(?i)hệ\s*thống\s*nội\s*bộ'
+    description: "Hệ thống nội bộ"
+    confidence: 0.60
+    context_required: false
+
+  - regex: '(?i)báo\s*cáo\s*(?:tổng\s*hợp|kinh\s*doanh\s*tổng\s*hợp|trích\s*lập\s*dự\s*phòng)'
+    description: "Báo cáo tổng hợp/kinh doanh tổng hợp/trích lập dự phòng"
+    confidence: 0.65
+    context_required: false
+
+  - regex: '(?i)(?:biểu\s*mẫu|quy\s*chế\s*hoạt\s*động|hướng\s*dẫn\s*nội\s*bộ|quy\s*định\s*nội\s*bộ)'
+    description: "Biểu mẫu/quy chế/hướng dẫn/quy định nội bộ"
+    confidence: 0.65
+    context_required: false
+
+  - regex: '(?i)(?:kế\s*hoạch\s*công\s*tác|biên\s*bản\s*họp|tờ\s*trình)'
+    description: "Kế hoạch công tác/biên bản họp/tờ trình"
+    confidence: 0.65
+    context_required: false
+
+keywords:
+  primary:
+    - "quy trình nội bộ"
+    - "quy trình vận hành"
+    - "quy trình hoạt động"
+    - "quy trình phê duyệt"
+    - "quy trình xử lý"
+    - "hệ thống nội bộ"
+    - "biểu mẫu"
+    - "báo cáo tổng hợp"
+    - "quy chế hoạt động"
+    - "hướng dẫn nội bộ"
+    - "quy định nội bộ"
+    - "kế hoạch công tác"
+    - "biên bản họp"
+    - "tờ trình"
+    - "phê duyệt khoản vay"
+    - "chính sách quản lý rủi ro"
+    - "khẩu vị rủi ro"
+    - "hội đồng tín dụng"
+    - "trích lập dự phòng"
+    - "chỉ tiêu kinh doanh"
+    - "kế hoạch kinh doanh"
+    - "nhượng tái bảo hiểm"
+    - "chính sách hoa hồng"
+  secondary:
+    - "phòng ban"
+    - "đơn vị"
+    - "ban giám đốc"
+    - "cấp trên"
+    - "phê duyệt"
+    - "ký duyệt"
+    - "lưu hành"
+    - "chi nhánh"
+    - "hạn mức"
+    - "rủi ro tín dụng"
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true
+
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC

@@ -83,3 +83,11 @@ keywords:
 false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
+
+# SCALE_LARGE theo tài liệu (Bước 3): >50 số hộ chiếu duy nhất trong 1 file
+# → RESTRICTED. Xấp xỉ theo rule ID riêng lẻ, xem giải thích chi tiết ở
+# rules/pii/vn_id.yaml.
+volume_escalation:
+  thresholds:
+    - min_count: 50
+      escalate_to: SECRET

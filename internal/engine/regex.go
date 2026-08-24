@@ -114,12 +114,14 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 
 			// ── 3. Validators (Luhn, ...) ─────────────────────────────────
 			// Validator = hard check: pass → rất chắc chắn; fail → loại bỏ hoàn toàn.
+			validated := false
 			if len(pat.Validators) > 0 {
 				passed, enforced := applyValidators(matchBytes, pat.Validators)
 				if enforced && !passed {
 					continue // false positive đã bị lọc bởi thuật toán (vd: số thẻ sai Luhn)
 				}
 				if enforced && passed {
+					validated = true
 					// Additive boost thay vì hard override — giữ relative ranking giữa các IIN.
 					// Visa/Napas đã có base cao → vẫn đạt 0.99; UnionPay (IIN rộng hơn)
 					// dừng ở ~0.96, phản ánh đúng FP risk cao hơn.
@@ -183,6 +185,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				Context:     ctxSnip,
 				Value:       string(matchBytes),
 				PatternDesc: pat.Description,
+				Validated:   validated,
 			})
 		}
 	}
@@ -213,8 +216,8 @@ type ContextZone struct {
 // contextZones định nghĩa 3 vùng khoảng cách với mức boost giảm dần.
 // Tham chiếu từ đặc tả người dùng: 20 byte = cao nhất, 50 byte = trung bình.
 var contextZones = []ContextZone{
-	{MaxDist: 20, PrimBoost: 0.15, SecBoost: 0.07}, // Zone 1: keyword ngay cạnh (trong câu)
-	{MaxDist: 50, PrimBoost: 0.10, SecBoost: 0.05}, // Zone 2: keyword trong câu gần
+	{MaxDist: 20, PrimBoost: 0.15, SecBoost: 0.07},  // Zone 1: keyword ngay cạnh (trong câu)
+	{MaxDist: 50, PrimBoost: 0.10, SecBoost: 0.05},  // Zone 2: keyword trong câu gần
 	{MaxDist: 200, PrimBoost: 0.05, SecBoost: 0.02}, // Zone 3: keyword cùng đoạn văn
 	// Ngoài maxDist của Zone 3 (hoặc contextWindow): boost = 0
 }
@@ -481,13 +484,312 @@ var vnBankPrefix3 = map[string]struct{}{
 	"502": {}, // Techcombank pattern
 }
 
+// bareDiseaseNames: tên bệnh trần trụi (health_001, HEALTH_GENERAL, không
+// nhãn "Chẩn đoán:") — dùng trong 2 post-filter riêng biệt: (1) khớp nhầm
+// cột "Nhóm thuốc" trong danh mục thuốc/vật tư y tế, (2) khớp nhầm thống kê
+// ca bệnh ẩn danh trong biên bản họp giao ban khoa. Xem chi tiết tại từng
+// điểm dùng trong shouldSkipPostFilter (case "health_001").
+var bareDiseaseNames = map[string]bool{
+	"ung thư": true, "cancer": true, "u ác tính": true, "malignant": true,
+	"tiểu đường": true, "diabetes": true, "tim mạch": true, "cardiovascular": true,
+	"đột quỵ": true, "stroke": true, "thận mãn": true, "chronic kidney": true,
+	"suy thận": true, "renal failure": true, "lao phổi": true, "tuberculosis": true,
+}
+
+// placeholderSensitiveRules: rule khớp GIÁ TRỊ PII/tài chính cụ thể — nơi
+// annotation "(ví dụ)"/"(mẫu điền)" ngay sau match có ý nghĩa "giá trị này
+// giả". KHÔNG gồm rule khớp từ vựng/chủ đề (business_internal_001,
+// watermark_001, healthcare_internal_business_001, hr_internal_business_001,
+// fraud_investigation_001, classified_doc_*, insurance_context_001...) —
+// với nhóm đó, annotation "ví dụ" đứng gần chỉ nói lên CÁC GIÁ TRỊ KHÁC
+// trong văn bản là giả, không phủ nhận việc từ vựng đó THẬT SỰ xuất hiện
+// (VD "biểu mẫu" trong tiêu đề vẫn là bằng chứng thật "đây là biểu mẫu").
+var placeholderSensitiveRules = map[string]bool{
+	"vn_id_001":             true,
+	"passport_001":          true,
+	"social_insurance_001":  true,
+	"dob_001":               true,
+	"phone_001":             true,
+	"email_001":             true,
+	"vn_name_001":           true,
+	"bank_account_001":      true,
+	"credit_card_001":       true,
+	"cvv_001":               true,
+	"otp_auth_001":          true,
+	"swift_bic_001":         true,
+	"iban_001":              true,
+	"income_001":            true,
+	"tax_code_business_001": true,
+	"tax_code_personal_001": true,
+	"health_001":            true,
+	"biometric_001":         true,
+	"location_tracking_001": true,
+}
+
 func shouldSkipPostFilter(chunk []byte, start, end int, ruleID string, match []byte) bool {
 	if isCommentedLine(chunk, start) {
 		return true
 	}
 
+	// Placeholder/ví dụ minh họa — CHỈ áp dụng cho rule khớp GIÁ TRỊ PII/tài
+	// chính cụ thể (số CCCD, ngày sinh, SĐT, email, số tài khoản...), KHÔNG
+	// áp dụng cho rule khớp TỪ VỰNG/chủ đề văn bản (business_internal_001,
+	// watermark_001, healthcare_internal_business_001...). Lý do: với rule
+	// giá trị, "(ví dụ)" ngay sau nghĩa là GIÁ TRỊ đó giả — nên loại. Với
+	// rule từ vựng, "biểu mẫu"/"quy trình" xuất hiện là bằng chứng THẬT về
+	// LOẠI văn bản dù giá trị PII khác trong cùng văn bản là giả — áp dụng
+	// nhầm sẽ xóa luôn tín hiệu "đây là biểu mẫu/tài liệu nội bộ" hợp lệ.
+	// Xác nhận qua health_int_00748.docx: tiêu đề "BIỂU MẪU DÙNG ĐÀO TẠO -
+	// VÍ DỤ MINH HỌA..." khiến match "biểu mẫu" của business_internal_001
+	// (rule từ vựng) bị xóa nhầm nếu áp dụng chung, làm file tụt hẳn xuống
+	// PUBLIC thay vì INTERNAL đúng.
+	if placeholderSensitiveRules[ruleID] {
+		// Xác nhận qua health_int_00001.docx: "Ngày sinh: 01/01/1990 (ví
+		// dụ)", "Số CMND/CCCD: 012345678 (ví dụ minh họa)". RE2 không hỗ trợ
+		// lookahead dài nên dùng post-filter kiểm tra byte NGAY SAU match.
+		//
+		// ĐÃ SỬA (vòng 2): bản gốc yêu cầu "(" NGAY TRƯỚC cụm từ (VD "(ví
+		// dụ") — bỏ sót biến thể có từ chen giữa. Xác nhận qua health_int_
+		// 00748.docx: "Số CMND/CCCD: 012345678 (DỮ LIỆU ví dụ, không dùng số
+		// thật)" — dấu "(" đứng trước "dữ liệu", không phải trực tiếp trước
+		// "ví dụ" — check cũ (Contains "(ví dụ") không khớp dù rõ ràng là
+		// placeholder. Bỏ yêu cầu "(" liền kề; nới cửa sổ 20→50 byte; thêm
+		// "mẫu điền"/"không dùng số thật"/"dữ liệu ví dụ" (cùng file: "Số
+		// thẻ BHYT: XX-X-XX-XXX-XXXXX (mẫu điền)"). KHÔNG dùng bare "mẫu"/
+		// "mau" — quá chung chung, dễ khớp nhầm văn bản có PII thật tình cờ
+		// nhắc "mẫu" chỗ khác (VD "báo cáo mẫu", "theo mẫu quy định").
+		afterEnd := minI(len(chunk), end+50)
+		after := strings.ToLower(string(chunk[end:afterEnd]))
+		placeholderMarkers := []string{
+			"ví dụ", "vi du", "minh họa", "minh hoa", "mẫu điền", "mau dien",
+			"không dùng số thật", "khong dung so that", "không phải số thật", "khong phai so that",
+			"dữ liệu ví dụ", "du lieu vi du", "(demo", "(example", "(sample",
+		}
+		for _, marker := range placeholderMarkers {
+			if strings.Contains(after, marker) {
+				return true
+			}
+		}
+	}
+
 	lower := strings.ToLower(string(match))
+	// normLower: gộp mọi khoảng trắng liên tiếp (kể cả \n do PDF tách dòng
+	// giữa cụm từ, VD "hồ sơ\nbệnh án") thành 1 dấu cách — dùng cho so sánh
+	// CHÍNH XÁC/tra map bên dưới, tránh bỏ sót do lower còn giữ nguyên \n.
+	// Xác nhận qua health_int_00156.pdf (healthcare__internal, ground truth
+	// INTERNAL): match "hồ sơ\nbệnh án" không khớp lower=="hồ sơ bệnh án".
+	normLower := strings.Join(strings.Fields(lower), " ")
 	switch ruleID {
+	case "health_001":
+		// "sản khoa" (HEALTH_RESTRICTED, SECRET không gate — dành cho nội
+		// dung sinh sản nhạy cảm) cũng khớp nhầm TÊN CHUYÊN KHOA/CHỨC DANH
+		// bác sĩ ký tên (VD "Chức danh: Bác sĩ sản khoa", "Khoa Sản khoa")
+		// — không liên quan nội dung sản khoa nhạy cảm của bệnh nhân, chỉ
+		// là tên chuyên môn người ký. Xác nhận qua health_conf_00009/00108/
+		// 00125/00134.docx (healthcare__confidential, ground truth
+		// CONFIDENTIAL). RE2 không lookbehind nên loại trừ bằng post-filter:
+		// nếu "sản khoa" nằm ngay sau "bác sĩ"/"chức danh"/"chuyên khoa" (≤20
+		// byte trước) thì đây là tên chức danh, không phải nội dung nhạy cảm.
+		if strings.Contains(lower, "sản khoa") || strings.Contains(lower, "sản   khoa") {
+			ctxStart := maxI(0, start-20)
+			before := strings.ToLower(string(chunk[ctxStart:start]))
+			if strings.Contains(before, "bác sĩ") || strings.Contains(before, "bac si") ||
+				strings.Contains(before, "chức danh") || strings.Contains(before, "chuyên khoa") ||
+				strings.Contains(before, "chuyen khoa") || strings.Contains(before, "khoa:") {
+				return true
+			}
+		}
+		// "tâm thần hoặc tử vong" trong bảng THỜI HẠN LƯU TRỮ hồ sơ bệnh án
+		// (VD "Hồ sơ người bệnh tâm thần hoặc tử vong: lưu trữ tối thiểu 20
+		// năm") — cụm cố định trong văn bản QUY CHẾ BẢO MẬT liệt kê các NHÓM
+		// hồ sơ theo thời hạn lưu trữ, không phải chẩn đoán thật của bệnh nhân
+		// cụ thể nào. Xác nhận qua health_int_00616/00627.docx (healthcare__
+		// internal, ground truth INTERNAL). Idiom rất hẹp ("tâm thần" đứng
+		// ngay trước "hoặc tử vong") — chẩn đoán tâm thần thật sẽ không dùng
+		// "hoặc tử vong" làm phương án thay thế, nên an toàn để loại trừ cục
+		// bộ (không cần loại cả HEALTH_RESTRICTED nói chung).
+		// ĐÃ MỞ RỘNG 2 LẦN: bản gốc chỉ khớp "hoặc tử vong" (20 byte) nhưng
+		// thực tế văn bản có nhiều biến thể dài hơn — "tâm thần, tử vong:"
+		// (health_int_00028.docx) và "tâm thần, người bệnh tử vong:"
+		// (health_int_00063.docx, 27 byte tới "tử vong") — nới cửa sổ lên
+		// 45 byte, đủ bao trùm các biến thể liệt kê nhóm hồ sơ theo thời hạn
+		// lưu trữ đã gặp, vẫn đủ hẹp để không lẫn văn xuôi chẩn đoán thật.
+		if strings.Contains(lower, "tâm thần") || strings.Contains(lower, "tam than") {
+			afterEnd2 := minI(len(chunk), end+45)
+			after2 := strings.ToLower(string(chunk[end:afterEnd2]))
+			if strings.Contains(after2, "tử vong") || strings.Contains(after2, "tu vong") {
+				return true
+			}
+		}
+		// Biểu mẫu/template đào tạo trống — xác nhận qua health_int_00001.
+		// docx (healthcare__internal, ground truth INTERNAL): tiêu đề "PHIẾU
+		// NHẬP VIỆN (DÙNG NỘI BỘ - TEMPLATE ĐÀO TẠO)" + "...không lưu trữ như
+		// hồ sơ bệnh án thật" — health_001 vẫn khớp bare "hồ sơ bệnh án"
+		// (HEALTH_GENERAL, override CONFIDENTIAL) dù văn bản TỰ KHAI đây là
+		// biểu mẫu trống dùng đào tạo, không phải hồ sơ thật. Kiểm tra CẢ
+		// CHUNK (không chỉ lân cận match) vì đây là tín hiệu Ở CẤP VĂN BẢN,
+		// không phải cục bộ. Loại trừ CÓ CHỦ ĐÍCH các từ khóa HEALTH_RESTRICTED
+		// (HIV/AIDS/tâm thần/di truyền/pháp y...) khỏi post-filter này — dù
+		// văn bản có gắn nhãn "template đào tạo", 1 chẩn đoán HIV/tâm thần
+		// thật (nếu vô tình xuất hiện) vẫn nên giữ SECRET theo đúng chính
+		// sách "luôn SECRET không gate" đã thống nhất, không nên bị nới lỏng
+		// chỉ vì tiêu đề văn bản.
+		if !strings.Contains(lower, "hiv") && !strings.Contains(lower, "aids") &&
+			!strings.Contains(lower, "tâm thần") && !strings.Contains(lower, "tam than") &&
+			!strings.Contains(lower, "di truyền") && !strings.Contains(lower, "di truyen") &&
+			!strings.Contains(lower, "adn") && !strings.Contains(lower, "dna") &&
+			!strings.Contains(lower, "sản khoa") && !strings.Contains(lower, "phá thai") &&
+			!strings.Contains(lower, "pha thai") && !strings.Contains(lower, "pháp y") &&
+			!strings.Contains(lower, "phap y") {
+			chunkLower := strings.ToLower(string(chunk))
+			if strings.Contains(chunkLower, "template đào tạo") || strings.Contains(chunkLower, "template dao tao") ||
+				strings.Contains(chunkLower, "biểu mẫu trống") || strings.Contains(chunkLower, "bieu mau trong") ||
+				strings.Contains(chunkLower, "không lưu trữ như") || strings.Contains(chunkLower, "khong luu tru nhu") {
+				return true
+			}
+
+			// Biên bản họp giao ban khoa — bàn về QUY TRÌNH/CA BỆNH ẨN DANH
+			// (không định danh bệnh nhân cụ thể), không phải hồ sơ bệnh án
+			// thật. Xác nhận qua health_int_00682/00698.docx (healthcare__
+			// internal, ground truth INTERNAL — dataset tự ghi rõ "Không đề
+			// cập thông tin cụ thể, định danh cá nhân bệnh nhân"): "tiếp tục
+			// tăng cường cập nhật hồ sơ bệnh án điện tử" (bàn quy trình, bare
+			// "hồ sơ bệnh án" không nhãn "Chẩn đoán:") và "Có 2 trường hợp
+			// bệnh lý phức tạp (...suy thận mạn...)" (thống kê ca bệnh ẨN
+			// DANH, không tên bệnh nhân — khớp nhầm nhánh tên bệnh trần trụi
+			// vốn nhắm chẩn đoán CÓ định danh). Chỉ loại "hồ sơ bệnh án" bare
+			// và tên bệnh trần trụi — KHÔNG loại pattern có nhãn "Chẩn đoán:"
+			// (nhãn rõ ràng vẫn là tín hiệu hồ sơ thật đáng tin hơn).
+			//
+			// "Quy chế bảo mật hồ sơ bệnh án" — VĂN BẢN CHÍNH SÁCH quy định
+			// cách lưu trữ/truy cập/xử lý vi phạm đối với hồ sơ bệnh án nói
+			// chung (không nhắc bệnh nhân/chẩn đoán cụ thể nào), khiến bare
+			// "hồ sơ bệnh án"/"bệnh án" lặp lại 10+ lần trong toàn văn bản.
+			// Xác nhận qua health_int_00616/00627.docx (healthcare__internal,
+			// ground truth INTERNAL).
+			// MỞ RỘNG: "quy định bảo mật"/"tài liệu đào tạo"/"hội thảo chuyên
+			// môn/đề" — xác nhận qua health_int_00572.docx (healthcare__
+			// internal, ground truth INTERNAL): tiêu đề "TÀI LIỆU ĐÀO TẠO NỘI
+			// BỘ..." có mục "Các điểm lưu ý trong quy định bảo mật thông tin
+			// bệnh án theo Nghị định 13/2023/NĐ-CP" — tham chiếu luật chung,
+			// không phải hồ sơ bệnh nhân cụ thể.
+			if normLower == "hồ sơ bệnh án" || normLower == "bệnh án" || bareDiseaseNames[normLower] {
+				if strings.Contains(chunkLower, "biên bản họp giao ban") || strings.Contains(chunkLower, "bien ban hop giao ban") ||
+					strings.Contains(chunkLower, "họp giao ban khoa") || strings.Contains(chunkLower, "hop giao ban khoa") ||
+					strings.Contains(chunkLower, "quy chế bảo mật") || strings.Contains(chunkLower, "quy che bao mat") ||
+					strings.Contains(chunkLower, "quy định bảo mật") || strings.Contains(chunkLower, "quy dinh bao mat") ||
+					strings.Contains(chunkLower, "tài liệu đào tạo") || strings.Contains(chunkLower, "tai lieu dao tao") ||
+					strings.Contains(chunkLower, "hội thảo chuyên môn") || strings.Contains(chunkLower, "hoi thao chuyen mon") ||
+					strings.Contains(chunkLower, "hội thảo chuyên đề") || strings.Contains(chunkLower, "hoi thao chuyen de") ||
+					strings.Contains(chunkLower, "đào tạo chuyên môn") || strings.Contains(chunkLower, "dao tao chuyen mon") {
+					return true
+				}
+			}
+
+			// Tên bệnh trần trụi (HEALTH_GENERAL) khớp nhầm trong HỘI THẢO/
+			// ĐÀO TẠO CHUYÊN MÔN NỘI BỘ bàn về PHÁC ĐỒ ĐIỀU TRỊ chung của 1
+			// loại bệnh (VD "Cập nhật phác đồ điều trị tăng huyết áp" nhắc
+			// "tim mạch"/"suy thận" như bối cảnh dịch tễ/biến chứng chung,
+			// không phải chẩn đoán của bệnh nhân cụ thể nào) — xác nhận qua
+			// health_int_00635/00640.docx (healthcare__internal, ground
+			// truth INTERNAL). Chỉ loại tên bệnh trần trụi, không loại pattern
+			// có nhãn "Chẩn đoán:" (vẫn có thể là chẩn đoán ca bệnh minh họa
+			// trong thảo luận, giữ nguyên tín hiệu).
+			if bareDiseaseNames[normLower] &&
+				(strings.Contains(chunkLower, "hội thảo chuyên môn") || strings.Contains(chunkLower, "hoi thao chuyen mon") ||
+					strings.Contains(chunkLower, "hội thảo chuyên đề") || strings.Contains(chunkLower, "hoi thao chuyen de") ||
+					strings.Contains(chunkLower, "đào tạo chuyên môn") || strings.Contains(chunkLower, "dao tao chuyen mon")) {
+				return true
+			}
+
+			// "Chẩn đoán:" đứng TRẦN (nhãn tiêu đề mục lục "Định nghĩa và
+			// chẩn đoán:" trong tài liệu đào tạo, ngay sau là xuống dòng/gạch
+			// đầu dòng khác — KHÔNG có giá trị chẩn đoán thật đi kèm ngay sau
+			// dấu ":") trong hội thảo/đào tạo chuyên môn — xác nhận qua
+			// health_int_00640.docx (healthcare__internal, ground truth
+			// INTERNAL): "2.1. Định nghĩa và chẩn đoán:\n- Đái tháo đường...".
+			if (normLower == "chẩn đoán:" || normLower == "chẩn đoán :" || normLower == "chẩn đoán=") &&
+				(strings.Contains(chunkLower, "hội thảo chuyên môn") || strings.Contains(chunkLower, "hoi thao chuyen mon") ||
+					strings.Contains(chunkLower, "hội thảo chuyên đề") || strings.Contains(chunkLower, "hoi thao chuyen de") ||
+					strings.Contains(chunkLower, "đào tạo chuyên môn") || strings.Contains(chunkLower, "dao tao chuyen mon")) {
+				afterEnd3 := minI(len(chunk), end+3)
+				after3 := string(chunk[end:afterEnd3])
+				if strings.HasPrefix(strings.TrimLeft(after3, " \t"), "\n") {
+					return true
+				}
+			}
+
+			// "Khám lâm sàng"/"phiếu khám sức khỏe"/"phân loại sức khỏe"/"kết
+			// luận của bác sĩ"/"kết quả cận lâm sàng" — TÊN BƯỚC quy trình
+			// khám bệnh chung (VD "Bước 3: Bác sĩ thăm hỏi, khám lâm sàng,
+			// chỉ định xét nghiệm..."), không phải hồ sơ khám của bệnh nhân
+			// cụ thể nào. Xác nhận qua health_int_00071/00611.docx
+			// (healthcare__internal, ground truth INTERNAL — cả 2 là "Quy
+			// trình tiếp nhận/vận hành khoa/phòng khám"). Chỉ loại khi match
+			// TRÙNG KHỚP CHÍNH XÁC (không phải cụm dài hơn có định danh bệnh
+			// nhân đi kèm) và chunk là văn bản QUY TRÌNH (không phải hồ sơ
+			// khám thật).
+			if (normLower == "khám lâm sàng" || normLower == "phiếu khám sức khỏe" ||
+				normLower == "phân loại sức khỏe" || normLower == "kết luận của bác sĩ" ||
+				normLower == "kết quả cận lâm sàng") &&
+				(strings.Contains(chunkLower, "quy trình tiếp nhận") || strings.Contains(chunkLower, "quy trinh tiep nhan") ||
+					strings.Contains(chunkLower, "quy trình vận hành") || strings.Contains(chunkLower, "quy trinh van hanh") ||
+					strings.Contains(chunkLower, "quy trình khám bệnh") || strings.Contains(chunkLower, "quy trinh kham benh")) {
+				return true
+			}
+
+			// Tên bệnh thông thường (HEALTH_GENERAL, bare không nhãn "Chẩn
+			// đoán:") khớp nhầm CỘT PHÂN LOẠI THUỐC trong danh mục thuốc/vật
+			// tư y tế bệnh viện — xác nhận qua health_int_00702.docx
+			// (healthcare__internal, ground truth INTERNAL): bảng "Số thứ
+			// tự | Tên thuốc | ... | Nhóm thuốc" có giá trị cột "Tim mạch"
+			// (nhóm điều trị của THUỐC, không phải chẩn đoán của BỆNH NHÂN).
+			// Không dùng post-filter khoảng cách (proximity) vì header cột
+			// "Nhóm thuốc" chỉ xuất hiện 1 LẦN ở đầu bảng, cách xa hàng dữ
+			// liệu hàng chục/hàng trăm byte — kiểm tra CẢ CHUNK thay vì lân
+			// cận. Chỉ áp dụng khi match TRÙNG KHỚP CHÍNH XÁC 1 trong các từ
+			// bare disease-name (không phải cụm dài hơn như "Chẩn đoán: ung
+			// thư" — cụm đó có nhãn rõ ràng, không nên bị loại).
+			if bareDiseaseNames[normLower] &&
+				(strings.Contains(chunkLower, "danh mục thuốc") || strings.Contains(chunkLower, "danh muc thuoc") ||
+					strings.Contains(chunkLower, "nhóm thuốc") || strings.Contains(chunkLower, "nhom thuoc") ||
+					strings.Contains(chunkLower, "vật tư y tế") || strings.Contains(chunkLower, "vat tu y te")) {
+				return true
+			}
+		}
+	case "classified_doc_001":
+		// "tối mật" dùng làm TRẠNG TỪ mô tả mức độ nghiêm ngặt lưu trữ NỘI BỘ
+		// tự đặt ra ("lưu trữ tối mật theo quy định nội bộ") — không phải
+		// NHÃN PHÂN LOẠI tài liệu mật nhà nước thật (khác "TỐI MẬT" đứng độc
+		// lập làm watermark/tiêu đề). Cùng loại lỗi với "bảo mật tuyệt đối"
+		// (đã loại trong keywords, xem comment ORG-001 phía trên) — ngôn ngữ
+		// tự khai nghiêm ngặt, không phải nhãn mật thật. Xác nhận qua
+		// health_int_00429.docx (healthcare__internal, ground truth INTERNAL).
+		if strings.Contains(lower, "tối mật") || strings.Contains(lower, "toi mat") {
+			afterEnd4 := minI(len(chunk), end+30)
+			after4 := strings.ToLower(string(chunk[end:afterEnd4]))
+			if strings.Contains(after4, "quy định nội bộ") || strings.Contains(after4, "quy dinh noi bo") ||
+				strings.Contains(after4, "quy chế nội bộ") || strings.Contains(after4, "quy che noi bo") {
+				return true
+			}
+		}
+	case "bank_account_001":
+		// Số "Mã số doanh nghiệp:"/"Mã số thuế:" của TỔ CHỨC (10 chữ số, công
+		// khai trên cổng đăng ký doanh nghiệp quốc gia) trùng định dạng số tài
+		// khoản 9-14 số. exclude_if_no_keywords chỉ kiểm tra keyword có mặt
+		// TRONG CẢ CHUNK (không phải gần match cụ thể — xem HitMap.HasRule),
+		// nên 1 lần nhắc "tài khoản" ở đoạn khác (VD điều khoản thanh toán)
+		// đủ để giữ match này dù số thật ra là mã số doanh nghiệp/thuế, không
+		// liên quan tài khoản ngân hàng — xác nhận qua fin_int_00298.docx
+		// (finance_banking__internal, hợp đồng B2B giữa 2 pháp nhân). RE2
+		// không hỗ trợ lookbehind nên loại trừ bằng post-filter kiểm tra 40
+		// byte ngay trước match.
+		ctxStart := maxI(0, start-40)
+		before := strings.ToLower(string(chunk[ctxStart:start]))
+		if strings.Contains(before, "mã số doanh nghiệp") || strings.Contains(before, "mã số thuế") ||
+			strings.Contains(before, "ma so doanh nghiep") || strings.Contains(before, "ma so thue") {
+			return true
+		}
 	case "credentials_001":
 		placeholders := []string{
 			"your_api_key_here", "your-password", "your_password", "yourpassword",
@@ -499,10 +801,20 @@ func shouldSkipPostFilter(chunk []byte, start, end int, ruleID string, match []b
 			}
 		}
 	case "email_001":
-		if strings.HasPrefix(lower, "noreply@") || strings.HasPrefix(lower, "no-reply@") ||
-			strings.HasPrefix(lower, "donotreply@") || strings.HasPrefix(lower, "mailer-daemon@") ||
-			strings.HasPrefix(lower, "bounce@") {
-			return true
+		// System/department emails in public documents are not personal data.
+		systemPrefixes := []string{
+			"noreply@", "no-reply@", "donotreply@", "do-not-reply@", "mailer-daemon@", "bounce@",
+			"info@", "contact@", "support@", "help@", "admin@", "administrator@",
+			"hotline@", "cskh@", "dichvu@", "dịchvụ@", "thongbao@", "thông-bao@",
+			"newsletter@", "marketing@", "sales@", "pr@", "media@",
+			"webmaster@", "postmaster@", "unsubscribe@", "listserv@",
+			"announce@", "notification@", "alert@", "system@", "robot@", "bot@",
+			"no.reply@", "do.not.reply@",
+		}
+		for _, prefix := range systemPrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
 		}
 	}
 

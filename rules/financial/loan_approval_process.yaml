@@ -1,0 +1,62 @@
+# FIN-021 — Hướng dẫn quy trình thẩm định/phê duyệt hồ sơ vay nội bộ
+# Khác FIN-017/018 ở lĩnh vực nghiệp vụ (tín dụng/cho vay thay vì giao dịch
+# quầy/chuyển khoản). Đặc trưng: liệt kê các BƯỚC xét duyệt khoản vay
+# (tiếp nhận → thẩm định → phê duyệt), gửi nội bộ phòng Tín dụng. Tài liệu
+# tự nêu rõ "không thu thập thông tin cá nhân cụ thể" — tín hiệu tường minh
+# xác nhận đây là quy trình khung, không phải hồ sơ vay thực tế.
+#
+# LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns —
+# đã BỎ vì FPReduction trong engine (internal/engine/rules.go) chỉ có 4
+# field cố định (min_context_window, exclude_if_no_keywords, luhn_required,
+# cvv_expiry_boost), không có exclude_patterns; field lạ bị âm thầm bỏ qua
+# chứ không lỗi. Rủi ro thấp vì rule này chỉ INTERNAL (thấp) — nếu chunk có
+# tên khách hàng vay/số tiền vay cụ thể, "highest-sensitivity-wins" của
+# engine tự lấy mức cao hơn từ rule PII/financial khác (vn_name_001/
+# vn_id_001/bank_account_001...) đã có sẵn trong bộ rule, không cần loại
+# trừ tường minh — đúng như bản gốc tự ghi chú "chưa có trong bộ rule hiện
+# tại" (thực ra đã có, chỉ không cần khai báo lại ở đây).
+
+id: fin_loan_approval_process_001
+name: "FIN-021 Quy trình thẩm định/phê duyệt hồ sơ vay nội bộ"
+category: financial
+level: INTERNAL
+weight: 0.35
+priority: 35
+tags: [financial, internal_process, credit_lending]
+enabled: true
+
+patterns:
+  - regex: '(?i)quy\s*tr[ìi]nh\s*th[ẩa]m\s*đ[ịi]nh\s*(?:v[àa]\s*ph[êe]\s*duy[ệe]t)?\s*h[ồo]\s*s[ơo]\s*vay'
+    description: "FIN-021a Quy trình thẩm định/phê duyệt hồ sơ vay"
+    confidence: 0.85
+    context_required: false
+
+  - regex: '(?i)b[ưu][ớo]c\s*\d+\s*.{0,60}(?:ti[ếe]p\s*nh[ậa]n\s*h[ồo]\s*s[ơo]|th[ẩa]m\s*đ[ịi]nh|ph[êe]\s*duy[ệe]t)'
+    description: "FIN-021b Các bước quy trình xét duyệt vay"
+    confidence: 0.70
+    context_required: false
+
+  - regex: '(?i)ph[òo]ng\s*t[íi]n\s*d[ụu]ng'
+    description: "FIN-021c Phòng Tín dụng"
+    confidence: 0.45
+    context_required: true
+
+keywords:
+  primary:
+    - "thẩm định hồ sơ vay"
+    - "phê duyệt hồ sơ vay"
+    - "phòng tín dụng"
+    - "khoản vay nội bộ"
+  secondary:
+    - "khả năng trả nợ"
+    - "ban giám đốc"
+    - "ban phê duyệt"
+    - "tính hợp lệ về giấy tờ"
+
+level_gate:
+  require_corroboration: false
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

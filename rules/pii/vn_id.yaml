@@ -72,17 +72,37 @@ false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
 
+# Theo tài liệu "Bộ rule kết hợp Regex" (Bước 5): PII_DIRECT (CCCD) kết hợp
+# FIN_ACCOUNT (tài khoản/ngân hàng) hay các trường PII cơ bản khác (ngày
+# sinh/họ tên/địa chỉ) CHỈ dừng ở CONFIDENTIAL, không tự động SECRET — đây
+# chính là hình dạng bình thường của MỌI form CMND/CCCD/hợp đồng/KYC, không
+# phải bằng chứng bổ sung. checkEscalation() (internal/engine/regex.go) quét
+# ±300 byte quanh match, escalate ngay khi thấy 1 keyword, KHÔNG gate/đếm số
+# lần — đã gỡ "ngày sinh"/"họ và tên"/"địa chỉ"/"tài khoản"/"ngân hàng"/
+# "thẻ tín dụng" khỏi danh sách vì đây chính là nguyên nhân khiến gần như
+# MỌI file có CCCD (kể cả file CONFIDENTIAL bình thường) bị đẩy sai lên
+# SECRET/RESTRICTED (xác nhận qua eval_confusion.go: CONFIDENTIAL-row chỉ
+# đạt 3.3% accuracy, 1446/1600 file bị chấm RESTRICTED sai). Giữ lại
+# "mật khẩu"/"password" (CCCD cạnh credential là AUTH_SECRET thật) và
+# "sinh trắc học"/"biometric"/"vân tay" (tín hiệu bổ trợ vô hại, dù giờ dư
+# thừa so với biometric.yaml's override_level:SECRET).
 escalation:
   keywords:
-    - "tài khoản"
-    - "ngân hàng"
-    - "thẻ tín dụng"
     - "mật khẩu"
     - "password"
-    - "ngày sinh"
-    - "họ và tên"
-    - "địa chỉ"
     - "sinh trắc học"
     - "biometric"
     - "vân tay"
   escalate_to: SECRET
+
+# SCALE_LARGE theo tài liệu (Bước 3, quyết định team mục 6.3): >50 bản ghi
+# CCCD duy nhất trong 1 file → RESTRICTED. Đây là xấp xỉ THEO TỪNG rule ID
+# riêng lẻ (ApplyVolumeEscalation key theo rule.ID — internal/engine/
+# classifier.go), KHÔNG PHẢI đếm gộp liên-category "PII_DIRECT" đúng nghĩa
+# tài liệu (VD: 30 CCCD + 30 hộ chiếu cùng file = 60 bản ghi theo tài liệu
+# nhưng không rule nào tự kích hoạt vì mỗi rule chỉ đếm riêng tới 30). Đếm
+# gộp liên-rule cần sửa engine — ngoài phạm vi đợt này.
+volume_escalation:
+  thresholds:
+    - min_count: 50
+      escalate_to: SECRET

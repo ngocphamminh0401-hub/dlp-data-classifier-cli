@@ -24,9 +24,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/vnpt/dlp-classifier/internal/engine"
 	"github.com/vnpt/dlp-classifier/internal/scanner"
 	"github.com/vnpt/dlp-classifier/internal/walker"
 )
@@ -77,19 +79,65 @@ type Server struct {
 	// totalScans đếm tổng số file đã scan từ lúc server khởi động.
 	totalScans atomic.Int64
 
+	// eng là rule engine được compile một lần khi khởi động và tái sử dụng
+	// qua mọi request. engMu bảo vệ việc swap pointer khi hot-reload rules.
+	eng    *engine.Engine
+	engMu  sync.RWMutex
+	engErr error // lỗi load engine lần đầu (nil = thành công)
+
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
 // New tạo Server mới với cấu hình đã cho.
+// Engine được compile ngay tại đây — LoadRuleSet + regex + Aho-Corasick chạy
+// một lần duy nhất; mọi request sau sẽ tái sử dụng engine đã build sẵn.
 func New(cfg Config) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Server{
+	s := &Server{
 		cfg:       cfg,
 		startedAt: time.Now(),
 		ctx:       ctx,
 		cancel:    cancel,
 	}
+
+	engCfg := engine.EngineConfig{
+		MinConfidence:    cfg.ScanCfg.MinConfidence,
+		ContextWindow:    cfg.ScanCfg.ContextWindow,
+		FastFail:         cfg.ScanCfg.FastFail,
+		// Xem lý do tắt entropy check tại internal/scanner/scanner.go (New()).
+		EntropyThreshold: 0,
+	}
+	eng, err := engine.CompileFromDir(cfg.ScanCfg.RulesDir, engCfg)
+	s.eng = eng
+	s.engErr = err
+	if err != nil {
+		slog.Warn("agent: không thể load engine — scan sẽ thất bại cho đến khi reload", "err", err)
+	}
+	return s
+}
+
+// ReloadRules tải lại toàn bộ rules từ disk và swap engine đang chạy sang engine mới.
+// An toàn khi gọi concurrently: request đang chạy tiếp tục dùng engine cũ đến hết,
+// request mới sau khi swap sẽ dùng engine mới.
+func (s *Server) ReloadRules() error {
+	engCfg := engine.EngineConfig{
+		MinConfidence:    s.cfg.ScanCfg.MinConfidence,
+		ContextWindow:    s.cfg.ScanCfg.ContextWindow,
+		FastFail:         s.cfg.ScanCfg.FastFail,
+		// Xem lý do tắt entropy check tại internal/scanner/scanner.go (New()).
+		EntropyThreshold: 0,
+	}
+	eng, err := engine.CompileFromDir(s.cfg.ScanCfg.RulesDir, engCfg)
+	if err != nil {
+		return fmt.Errorf("reload rules: %w", err)
+	}
+	s.engMu.Lock()
+	s.eng = eng
+	s.engErr = nil
+	s.engMu.Unlock()
+	slog.Info("agent: rules reloaded thành công", "rules_dir", s.cfg.ScanCfg.RulesDir)
+	return nil
 }
 
 // Start khởi động tất cả transport đã cấu hình và block cho đến khi shutdown.
@@ -141,12 +189,15 @@ func (s *Server) Shutdown() {
 // dispatch định tuyến một Request đến handler tương ứng và ghi Response
 // qua hàm send được cung cấp bởi transport layer.
 //
+// ctx là context của connection (Unix) hoặc request (gRPC).
+// Khi ctx bị cancel (client ngắt kết nối, server shutdown), scan dừng sớm.
+//
 // Với scan_directory, send được gọi nhiều lần:
 //   - N lần với Status=StatusStreaming (một lần mỗi file)
 //   - 1 lần với Status=StatusStreamEnd (kết thúc stream, Result=nil)
 //
 // Transport layer chịu trách nhiệm thread-safety của send.
-func (s *Server) dispatch(req *Request, send func(*Response) error) {
+func (s *Server) dispatch(ctx context.Context, req *Request, send func(*Response) error) {
 	switch req.Action {
 
 	// ── ping ──────────────────────────────────────────────────────────────
@@ -175,9 +226,9 @@ func (s *Server) dispatch(req *Request, send func(*Response) error) {
 		paths <- req.Path
 		close(paths)
 
-		sc.ScanPaths(s.ctx, paths)
+		sc.ScanPaths(ctx, paths) // ctx của connection — cancel khi client ngắt
 		for result := range sc.Results() {
-			r := result // tránh capture biến vòng lặp
+			r := result
 			s.totalScans.Add(1)
 			if err := send(&Response{ID: req.ID, Status: StatusOK, Result: &r}); err != nil {
 				slog.Debug("agent: ghi response thất bại", "id", req.ID, "err", err)
@@ -198,7 +249,7 @@ func (s *Server) dispatch(req *Request, send func(*Response) error) {
 			return
 		}
 
-		sc.ScanPaths(s.ctx, paths)
+		sc.ScanPaths(ctx, paths) // ctx của connection — cancel khi client ngắt
 		for result := range sc.Results() {
 			r := result
 			s.totalScans.Add(1)
@@ -207,8 +258,16 @@ func (s *Server) dispatch(req *Request, send func(*Response) error) {
 				return
 			}
 		}
-		// Gửi stream_end dù có lỗi giữa chừng hay không, để client biết stream đã kết thúc.
+		// Gửi stream_end để client biết stream đã kết thúc (kể cả khi bị cancel).
 		_ = send(&Response{ID: req.ID, Status: StatusStreamEnd})
+
+	// ── reload_rules ──────────────────────────────────────────────────────
+	case ActionReloadRules:
+		if err := s.ReloadRules(); err != nil {
+			_ = send(errResp(req.ID, err.Error()))
+			return
+		}
+		_ = send(&Response{ID: req.ID, Status: StatusOK})
 
 	// ── shutdown ──────────────────────────────────────────────────────────
 	case ActionShutdown:
@@ -223,20 +282,41 @@ func (s *Server) dispatch(req *Request, send func(*Response) error) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// newScanner tạo scanner.Scanner mới, áp dụng override từ ScanOptions của request.
-// Mỗi request nhận một Scanner riêng biệt để tránh race condition.
+// newScanner tạo scanner.Scanner cho một request.
+//
+// Trường hợp thông thường (không override rules/confidence): tái sử dụng engine
+// đã cache — không đọc disk, không compile regex, không build Aho-Corasick.
+//
+// Trường hợp cần engine khác (override RulesDir hoặc MinConfidence khác mặc định):
+// fall back về scanner.New() để load engine mới. Đây là trường hợp hiếm.
 func (s *Server) newScanner(opts ScanOptions) *scanner.Scanner {
 	cfg := s.cfg.ScanCfg // copy struct
-	if opts.MinConfidence > 0 {
-		cfg.MinConfidence = opts.MinConfidence
-	}
-	if opts.RulesDir != "" {
-		cfg.RulesDir = opts.RulesDir
-	}
+
 	if opts.MaxFileSizeMB > 0 {
 		cfg.MaxFileSizeB = opts.MaxFileSizeMB * 1024 * 1024
 	}
-	return scanner.New(cfg)
+
+	needsNewEngine := (opts.RulesDir != "" && opts.RulesDir != s.cfg.ScanCfg.RulesDir) ||
+		(opts.MinConfidence > 0 && opts.MinConfidence != s.cfg.ScanCfg.MinConfidence)
+
+	if needsNewEngine {
+		if opts.RulesDir != "" {
+			cfg.RulesDir = opts.RulesDir
+		}
+		if opts.MinConfidence > 0 {
+			cfg.MinConfidence = opts.MinConfidence
+		}
+		return scanner.New(cfg) // hiếm: phải load rules mới
+	}
+
+	s.engMu.RLock()
+	eng := s.eng
+	s.engMu.RUnlock()
+
+	if eng == nil {
+		return scanner.New(cfg) // fallback nếu engine init lúc startup bị lỗi
+	}
+	return scanner.NewWithEngine(eng, cfg) // fast path: reuse cached engine
 }
 
 // walkDir trả về channel chứa đường dẫn tất cả file trong dir.

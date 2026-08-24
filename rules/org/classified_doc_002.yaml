@@ -15,9 +15,16 @@ tags: [org, classified_doc, confidential]
 enabled: true
 
 patterns:
-  # BÍ MẬT (VN) xuất hiện độc lập
-  - regex: '(?i)\bBÍ\s*MẬT\b'
-    description: "ORG-001b nhãn bí mật (VN)"
+  # BÍ MẬT (VN) xuất hiện độc lập — ĐÃ BỎ (?i): xác nhận qua fin_int_00092.
+  # docx (finance_banking__internal, ground truth INTERNAL) rằng bản (?i)
+  # khớp cả "giữ bí mật thông tin liên quan đến khách hàng" — điều khoản
+  # BẢO MẬT THÔNG THƯỜNG (cam kết giữ bí mật), không phải NHÃN PHÂN LOẠI văn
+  # bản. Nhãn phân loại thật luôn viết HOA TOÀN BỘ theo quy ước văn bản hành
+  # chính VN ("BÍ MẬT" như tiêu đề/watermark), khác văn xuôi thường dùng chữ
+  # thường "bí mật" — bỏ (?i) để chỉ khớp dạng viết hoa (cùng lớp lỗi đã sửa
+  # ở ORG-006g "báo cáo giao dịch đáng ngờ" trước đó).
+  - regex: '\bBÍ\s*MẬT\b'
+    description: "ORG-001b nhãn bí mật (VN, viết hoa)"
     confidence: 0.95
     context_required: false
     override_level: CONFIDENTIAL

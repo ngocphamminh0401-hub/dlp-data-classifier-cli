@@ -1,0 +1,56 @@
+# FIN-012 — Sao kê thẻ tín dụng cá nhân
+# Phát hiện qua thực tế: sao kê thẻ tín dụng luôn gắn định danh cụ thể
+# (họ tên chủ thẻ + 4 số cuối thẻ) với dữ liệu tài chính chi tiết (hạn mức,
+# dư nợ, lịch sử giao dịch từng khoản). Đây là combo PII + financial history
+# ở mức cá nhân hóa cao, khác với báo cáo tổng hợp/thống kê ẩn danh.
+
+id: fin_credit_card_statement_001
+name: "FIN-012 Sao kê thẻ tín dụng cá nhân"
+category: financial
+level: CONFIDENTIAL
+weight: 0.80
+priority: 80
+tags: [financial, credit_card, statement, pii]
+enabled: true
+
+patterns:
+  # Tiêu đề tài liệu
+  - regex: '(?i)sao\s*kê\s*thẻ\s*tín\s*dụng'
+    description: "FIN-012a Tiêu đề sao kê thẻ tín dụng"
+    confidence: 0.90
+    context_required: false
+
+  # Số thẻ dạng che một phần (4xxx xxxx xxxx dddd hoặc tương tự)
+  - regex: '\b4[x\dX]{3}[\s\-]?[x\dX]{4}[\s\-]?[x\dX]{4}[\s\-]?\d{4}\b'
+    description: "FIN-012b Số thẻ tín dụng dạng che một phần"
+    confidence: 0.85
+    context_required: false
+
+  # Cặp nhãn hạn mức tín dụng / dư nợ kèm số tiền VND
+  - regex: '(?i)(?:hạn\s*mức\s*tín\s*dụng|dư\s*nợ\s*(?:đầu|cuối)\s*kỳ)\s*(?:được\s*cấp)?\s*[:]?\s*[\d.,]+\s*(?:VND|VNĐ)'
+    description: "FIN-012c Hạn mức/dư nợ thẻ tín dụng"
+    confidence: 0.80
+    context_required: false
+
+keywords:
+  primary:
+    - "sao kê thẻ tín dụng"
+    - "chủ thẻ"
+    - "hạn mức tín dụng"
+    - "dư nợ cuối kỳ"
+  secondary:
+    - "số tiền thanh toán tối thiểu"
+    - "lãi suất trả chậm"
+    - "ngày đến hạn thanh toán"
+    - "VISA Platinum"
+
+# Cần corroboration: chỉ cụm "hạn mức tín dụng" một mình (vd trong quảng cáo
+# mở thẻ) không đủ để nâng CONFIDENTIAL. Phải đi kèm định danh chủ thẻ +
+# số thẻ/dư nợ cụ thể trong cùng chunk.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false

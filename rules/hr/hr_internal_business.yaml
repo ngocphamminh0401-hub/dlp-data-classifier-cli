@@ -1,0 +1,291 @@
+# HR-030 — Văn bản nghiệp vụ nhân sự nội bộ thông thường (HR-specific
+# BUSINESS_INTERNAL, tách khỏi org/business_internal_001 vì cần KHÔNG có
+# level_gate — cùng lý do ORG-009/business_internal_specific.yaml)
+#
+# Phát hiện qua thực tế: 336/1544 (22%) file hr__internal bị chấm sai PUBLIC
+# (43% của toàn bộ hàng INTERNAL sai) — chia làm 2 nhóm nguyên nhân:
+#   a) 266 file KHÔNG khớp rule nào cả — vốn không có PII, không có nhãn
+#      "lưu hành nội bộ" tường minh (watermark.yaml), không dùng từ vựng
+#      hành chính chung watermark/business_internal_001 đã có (VD "quy
+#      trình nội bộ", "biểu mẫu") — mà dùng từ vựng ĐẶC THÙ NHÂN SỰ khác:
+#      "thống kê nhân sự", "danh sách đoàn viên công đoàn", "bản mô tả công
+#      việc", "bảng chấm công"... (10 sub_type xác nhận qua dataset thật:
+#      email thông báo họp phòng ban, thông báo nội bộ chung, mô tả công
+#      việc đính kèm hợp đồng, báo cáo thống kê nhân sự tổng hợp, danh sách
+#      đoàn viên công đoàn, kế hoạch tuyển dụng-đào tạo theo năm, chính
+#      sách khung lương theo cấp bậc, quy trình đánh giá không định danh,
+#      biên bản họp phòng nhân sự, bảng chấm công hàng tháng).
+#   b) 63 file khớp business_internal_001 nhưng bị level_gate hạ về PUBLIC
+#      vì chỉ khớp 1 lần (từ vựng ở đó chung chung, thiết kế đòi ≥2 lần).
+#
+# DỰ TÍNH BAN ĐẦU: các cụm từ này là TIÊU ĐỀ LOẠI VĂN BẢN nhân sự đặc thù,
+# hiếm gặp trong PUBLIC → không cần level_gate, giống business_internal_specific_001.
+# ĐÃ SAI sau khi kiểm chứng trên hr__public (dataset thật) — không giống
+# vựng ngân hàng/bảo hiểm đặc thù của ORG-009 (thường chỉ xuất hiện trong
+# quy trình nội bộ thật), từ vựng nhân sự ở đây LẶP LẠI khá phổ biến trong
+# các văn bản nhân sự CÔNG KHAI hợp pháp: báo cáo ESG/CSR công bố "tỷ lệ
+# nghỉ việc"/"số lượng đoàn viên công đoàn" dạng số liệu tổng hợp, tin
+# tuyển dụng chia sẻ "bản mô tả công việc mẫu" cho ứng viên, hoặc tiêu đề
+# "Chat nội bộ" không tự nó đảm bảo nội dung nhạy cảm (dataset có cả ví dụ
+# PUBLIC dùng đúng tiêu đề này). Đã thêm level_gate (giống business_internal_001)
+# sau khi phát hiện hồi quy 157 file PUBLIC bị đẩy sai lên INTERNAL — xem
+# lịch sử sửa trong hội thoại thêm rule này. Chấp nhận rủi ro sót một số
+# file INTERNAL chỉ có 1 tín hiệu đơn lẻ, đổi lấy giảm FP trên PUBLIC.
+#
+# ĐÃ GỘP thay vì tạo rule mới (theo yêu cầu người dùng "nếu có thể kết hợp
+# các rule thì không cần thêm rule"): người dùng đề xuất 8 rule riêng
+# (HR-030 họp/HR-030b nghỉ lễ/HR-031 chấm công/HR-032 ngân sách tuyển dụng/
+# HR-033 thống kê nhân sự/HR-034 khung lương/HR-035 công đoàn/HR-036 JD)
+# nhưng PHẦN LỚN trùng lặp trực tiếp với các pattern đã có ở đây (chấm
+# công, khung lương, công đoàn, kế hoạch tuyển dụng, bản mô tả công việc,
+# biên bản họp) — thay vì nhân bản, đã gộp các tín hiệu MỚI/có giá trị bổ
+# sung (kênh liên lạc họp nội bộ, thành phần tham dự, thông báo nghỉ lễ,
+# ngân sách tuyển dụng cụ thể, JD gắn số HĐLĐ, ngày kết nạp đoàn viên) vào
+# patterns HR-030k→p bên dưới, dùng chung 1 level_gate đã kiểm chứng thay
+# vì tạo thêm 8 rule/gate riêng lẻ khó bảo trì.
+#
+# CỐ Ý KHÔNG gộp "báo cáo thống kê nhân sự"/"tỷ lệ nghỉ việc" (đề xuất
+# HR-033) dù người dùng đề xuất lại — đây CHÍNH LÀ pattern đã bị xóa ở trên
+# (dòng "ĐÃ XÓA HR-030b gốc") sau khi chứng minh gây FP trên báo cáo ESG/CSR
+# công khai; thêm lại sẽ tái phát hồi quy 157 file đã biết.
+#
+# CỐ Ý KHÔNG thêm câu tự khai "chỉ lưu hành nội bộ, không công bố" (đề xuất
+# HR-034a) — đã có sẵn, rộng hơn, và KHÔNG gate ở watermark.yaml (ORG-006a2
+# "lưu hành nội bộ"), thêm lại ở đây chỉ trùng lặp không cần thiết.
+
+id: hr_internal_business_001
+name: "HR-030 Văn bản nghiệp vụ nhân sự nội bộ thông thường"
+category: hr
+level: INTERNAL
+weight: 0.75
+priority: 39
+tags: [hr, business_internal, generic_internal]
+enabled: true
+
+patterns:
+  # Tiêu đề "Chat nội bộ - Phòng X" — định dạng chat nội bộ đặc trưng của
+  # dataset (không phải chat cá nhân/khách hàng, luôn gắn phòng ban cụ thể)
+  - regex: '(?i)chat\s*nội\s*bộ\s*[-–—]\s*phòng'
+    description: "HR-030a Chat nội bộ - Phòng X"
+    confidence: 0.70
+    context_required: false
+
+  # ĐÃ XÓA HR-030b gốc ("thống kê nhân sự"/"tỷ lệ nghỉ việc"/"số lượng nhân
+  # sự"): kiểm chứng trên hr__public (dataset thật) phát hiện đây là chỉ số
+  # THƯỜNG ĐƯỢC CÔNG BỐ CÔNG KHAI trong báo cáo ESG/CSR/phát triển bền vững
+  # thường niên (VD hr_pub_00003.docx — "Tỷ lệ nghỉ việc (%): 6,1%" trong
+  # báo cáo công khai) — không phải tín hiệu nội bộ đặc trưng như các pattern
+  # khác trong rule này, gây 157/1600 file PUBLIC bị đẩy sai lên INTERNAL.
+  # Các file INTERNAL thật dùng cụm này (VD hr_int_00001/00006, dạng "Chat
+  # nội bộ - Phòng Nhân sự" thảo luận số liệu nội bộ) vẫn được HR-030a bắt
+  # đúng qua tiêu đề chat — không mất recall khi xóa pattern này.
+
+  # Kế hoạch tuyển dụng/đào tạo theo năm/quý
+  - regex: '(?i)k[ếe]\s*ho[ạa]ch\s*(?:tuy[ểe]n\s*d[ụu]ng|đ[àa]o\s*t[ạa]o)'
+    description: "HR-030c Kế hoạch tuyển dụng/đào tạo"
+    confidence: 0.72
+    context_required: false
+
+  # Bản mô tả công việc (thường đính kèm hợp đồng lao động)
+  - regex: '(?i)b[ảa]n\s*m[ôo]\s*t[ảa]\s*c[ôo]ng\s*vi[ệe]c'
+    description: "HR-030d Bản mô tả công việc"
+    confidence: 0.78
+    context_required: false
+
+  # Danh sách đoàn viên công đoàn / công đoàn cơ sở
+  - regex: '(?i)đo[àa]n\s*vi[êe]n\s*c[ôo]ng\s*đo[àa]n|c[ôo]ng\s*đo[àa]n\s*c[ơo]\s*s[ởo]'
+    description: "HR-030e Đoàn viên công đoàn / công đoàn cơ sở"
+    confidence: 0.75
+    context_required: false
+
+  # Chính sách/khung lương theo cấp bậc
+  - regex: '(?i)khung\s*l[ươu][ơo]ng\s*theo\s*c[ấa]p\s*b[ậa]c|ch[íi]nh\s*s[áa]ch\s*khung\s*l[ươu][ơo]ng'
+    description: "HR-030f Khung lương theo cấp bậc"
+    confidence: 0.78
+    context_required: false
+
+  # Quy trình đánh giá hiệu suất/năng lực nhân viên
+  - regex: '(?i)quy\s*tr[ìi]nh\s*đ[áa]nh\s*gi[áa]\s*(?:hi[ệe]u\s*su[ấa]t|n[ăa]ng\s*l[ựu]c)'
+    description: "HR-030g Quy trình đánh giá hiệu suất/năng lực"
+    confidence: 0.75
+    context_required: false
+
+  # Bảng chấm công (tháng/tuần)
+  - regex: '(?i)b[ảa]ng\s*ch[ấa]m\s*c[ôo]ng'
+    description: "HR-030h Bảng chấm công"
+    confidence: 0.78
+    context_required: false
+
+  # Biên bản họp phòng/bộ phận — MỞ RỘNG từ "phòng nhân sự" thành mọi
+  # phòng/bộ phận (yêu cầu bổ sung: gộp thay vì tạo rule HR-030 mới trùng)
+  - regex: '(?i)bi[êe]n\s*b[ảa]n\s*h[ọo]p\s*(?:ph[òo]ng|b[ộo]\s*ph[ậa]n)'
+    description: "HR-030i Biên bản họp phòng/bộ phận"
+    confidence: 0.72
+    context_required: false
+
+  # Thông báo lịch họp — MỞ RỘNG: bản gốc yêu cầu "họp" đi kèm literal
+  # "phòng ban"/"định kỳ" ngay sau, nhưng dữ liệu thật hay dùng TÊN PHÒNG
+  # BAN CỤ THỂ (VD "Thông báo lịch họp phòng Hành chính") — không khớp bản
+  # gốc. Bỏ yêu cầu hậu tố cụ thể, chỉ cần "thông báo lịch họp" (đã đủ đặc
+  # thù, hiếm gặp trong văn bản PUBLIC — không phải cách nói thông thường
+  # ngoài ngữ cảnh nội bộ công ty).
+  - regex: '(?i)th[ôo]ng\s*b[áa]o\s*l[ịi]ch\s*h[ọo]p|th[ôo]ng\s*b[áa]o\s*n[ộo]i\s*b[ộo]\s*chung'
+    description: "HR-030j Thông báo lịch họp / thông báo nội bộ chung"
+    confidence: 0.72
+    context_required: false
+
+  # Tiêu đề email/memo nội bộ dạng "Đến: Toàn thể nhân viên/All Staff" —
+  # tín hiệu cấu trúc rất đặc trưng cho email/thông báo hành chính nội bộ
+  # (không phải nội dung công khai), xác nhận qua hr_int_00008/00035/00079
+  # (thông báo lịch nghỉ lễ) — các file này CHỈ có tín hiệu này + tiêu đề
+  # nghỉ lễ (HR-030m, context_required:true, tự nó không đủ đứng riêng) nên
+  # trước đây bị treo PUBLIC do thiếu corroboration; thêm tín hiệu độc lập
+  # này giúp 2 pattern cùng rule tự corroborate nhau đúng thiết kế gate.
+  # MỞ RỘNG 2 lần: bản đầu chỉ khớp "Đến: Toàn thể nhân viên/All Staff",
+  # dữ liệu thật cho thấy nhiều biến thể khác — "Đến: Thành viên phòng
+  # Nhân sự" (hr_int_00005), "Đến: Toàn thể THÀNH VIÊN phòng Hành chính"
+  # (hr_int_00107, có thêm từ "thành viên" chen giữa "toàn thể" và "phòng"
+  # mà bản trước đó yêu cầu liền kề nên bỏ sót), "Đến: TẬP THỂ phòng..."
+  # (hr_int_00121). Nới khoảng cách (.{0,20}) giữa từ chỉ phạm vi (toàn
+  # thể/toàn bộ/tập thể/thành viên) và đối tượng (nhân viên/cán bộ/phòng/
+  # bộ phận) thay vì yêu cầu liền kề, để chịu được các biến thể chèn từ.
+  - regex: '(?i)đ[ếe]n\s*[:=]\s*.{0,20}(?:to[àa]n\s*th[ểe]|to[àa]n\s*b[ộo]|t[ậa]p\s*th[ểe]|th[àa]nh\s*vi[êe]n).{0,20}(?:nh[âa]n\s*vi[êe]n|c[áa]n\s*b[ộo]|ph[òo]ng|b[ộo]\s*ph[ậa]n)|đ[ếe]n\s*[:=]\s*all\s*staff'
+    description: "HR-030q Memo/email gửi nội bộ (Đến: Toàn thể/Tập thể/Thành viên phòng...)"
+    confidence: 0.82   # xem ghi chú "NGƯỠNG CONFIDENCE" cuối patterns
+    context_required: false
+
+  # Báo cáo thống kê nhân sự — CHỈ khớp dạng TIÊU ĐỀ VĂN BẢN CHÍNH THỨC
+  # ("BÁO CÁO THỐNG KÊ NHÂN SỰ" + "Kỳ báo cáo:") — khác hẳn "tỷ lệ nghỉ
+  # việc"/"số lượng nhân sự" bare đã xóa trước đó (gây FP trên báo cáo ESG/
+  # CSR công khai, xem ghi chú "ĐÃ XÓA HR-030b gốc" ở trên). Báo cáo ESG/CSR
+  # công khai dùng tiêu đề khác hẳn (VD "NGƯỜI LAO ĐỘNG" — 1 mục trong báo
+  # cáo phát triển bền vững, xác nhận qua hr_pub_00003.docx), không phải
+  # "Báo cáo thống kê nhân sự" + khung "Kỳ báo cáo:" — cấu trúc báo cáo nội
+  # bộ định kỳ gửi nội bộ, không phải văn bản công bố ra ngoài.
+  - regex: '(?i)b[áa]o\s*c[áa]o\s*th[ốo]ng\s*k[êe]\s*nh[âa]n\s*s[ựu]|k[ỳy]\s*b[áa]o\s*c[áa]o\s*[:=]\s*(?:qu[ýy]|th[áa]ng)'
+    description: "HR-030r Tiêu đề báo cáo thống kê nhân sự / kỳ báo cáo nội bộ"
+    confidence: 0.82   # xem ghi chú "NGƯỠNG CONFIDENCE" cuối patterns
+    context_required: false
+
+  # Bảng biến động nhân sự dạng "đầu kỳ/cuối kỳ" (kế toán nhân sự nội bộ) —
+  # khác "tỷ lệ nghỉ việc"/"số lượng nhân sự" bare đã xóa (rủi ro ESG/CSR):
+  # cấu trúc "Số lượng đầu kỳ...Số lượng cuối kỳ" là bảng LUỒNG BIẾN ĐỘNG
+  # theo kỳ kế toán nội bộ (xác nhận qua hr_int_00075.docx: bảng chi tiết
+  # theo TỪNG phòng ban) — báo cáo ESG/CSR công khai chỉ công bố 1 dòng
+  # KPI toàn công ty (VD "Tỷ lệ nghỉ việc (%): 6,1%" đơn lẻ, không có khung
+  # đầu kỳ/cuối kỳ theo phòng ban), nên cụm "đầu kỳ"/"cuối kỳ" là tín hiệu
+  # phân biệt an toàn hơn hẳn bare metric đã gỡ trước đó.
+  - regex: '(?i)s[ốo]\s*l[ượu][ợo]ng\s*đ[ầa]u\s*k[ỳy]|s[ốo]\s*l[ượu][ợo]ng\s*cu[ốo]i\s*k[ỳy]'
+    description: "HR-030s Bảng biến động nhân sự đầu kỳ/cuối kỳ"
+    confidence: 0.82   # xem ghi chú "NGƯỠNG CONFIDENCE" cuối patterns
+    context_required: false
+
+  # Kênh liên lạc họp nội bộ (Zoom/hotline/tổng đài nội bộ, số máy lẻ) —
+  # tín hiệu bổ trợ yếu cần corroborate (context_required), không đủ tự
+  # đứng một mình vì "hotline" đơn thuần có thể xuất hiện ở nhiều ngữ cảnh
+  - regex: '(?i)(?:link\s*zoom|zoom\.us\/j\/|s[ốo]\s*m[áa]y\s*l[ẻe]|hotline\s*n[ộo]i\s*b[ộo]|t[ổo]ng\s*đ[àa]i\s*n[ộo]i\s*b[ộo])'
+    description: "HR-030k Kênh liên lạc nội bộ (Zoom/hotline/tổng đài)"
+    confidence: 0.55
+    context_required: true
+
+  # Thành phần tham dự liệt kê tên cụ thể (Ông/Bà + Tên) — đặc trưng biên
+  # bản họp thật, không phải thông báo chung chung
+  - regex: '(?i)th[àa]nh\s*ph[ầa]n\s*tham\s*d[ựu]\s*[:=]?\s*[\r\n]?(?:.{0,30}[-–]\s*(?:[Oo]ng|[Bb][àa])\s+[A-ZÀ-Ỵ])'
+    description: "HR-030l Thành phần tham dự liệt kê tên cụ thể"
+    confidence: 0.60
+    context_required: false
+
+  # Thông báo lịch nghỉ lễ nội bộ — vẫn là văn bản nội bộ (gửi toàn thể nhân
+  # viên, kèm hotline trực lễ) dù nội dung ít nhạy hơn biên bản họp
+  - regex: '(?i)th[ôo]ng\s*b[áa]o\s*l[ịi]ch\s*ngh[ỉi]\s*l[ễe]'
+    description: "HR-030m Thông báo lịch nghỉ lễ"
+    confidence: 0.82   # xem ghi chú "NGƯỠNG CONFIDENCE" cuối patterns
+    context_required: true
+
+  # Ngân sách tuyển dụng/đào tạo cụ thể — tín hiệu tài chính nội bộ mạnh,
+  # khác kế hoạch tuyển dụng chung chung (HR-030c) ở chỗ có SỐ TIỀN cụ thể
+  - regex: '(?i)ng[âa]n\s*s[áa]ch\s*(?:tuy[ểe]n\s*d[ụu]ng|đ[àa]o\s*t[ạa]o|nh[âa]n\s*s[ựu])\s*(?:d[ựu]\s*ki[ếe]n)?\s*[:=]?\s*\d{1,3}(?:[.,]\d{3}){2,4}\s*(?:VNĐ|đồng)'
+    description: "HR-030n Ngân sách tuyển dụng/đào tạo cụ thể"
+    confidence: 0.82
+    context_required: false
+
+  # JD đính kèm hợp đồng lao động số cụ thể — MẠNH HƠN pattern bare "bản mô
+  # tả công việc" (HR-030d) vì phân biệt được với JD tuyển dụng công khai
+  # (không gắn số HĐLĐ đã ký của 1 nhân viên cụ thể)
+  # MỞ RỘNG: xác nhận qua hr_int_00315.docx rằng số HĐLĐ trong mẫu thực tế
+  # đôi khi là CHỖ TRỐNG dạng "số ...../HĐLĐ" (placeholder chưa điền, không
+  # phải số thật) — bản gốc chỉ chấp nhận [\d\/A-Zđ] nên bỏ sót; thêm "."
+  # vào lớp ký tự để chấp nhận cả placeholder.
+  - regex: '(?i)(?:ph[ụu]\s*l[ụu]c\s*)?đ[íi]nh\s*k[èe]m\s*h[ợo]p\s*đ[ồo]ng\s*lao\s*đ[ộo]ng\s*s[ốo]\s*[\d\/A-Zđ.]{3,20}'
+    description: "HR-030o JD đính kèm hợp đồng lao động số cụ thể"
+    confidence: 0.85
+    context_required: false
+
+  # Ngày kết nạp đoàn viên / chức vụ công đoàn — bổ trợ tín hiệu cho
+  # HR-030e (đoàn viên công đoàn) trên danh sách/hồ sơ công đoàn thật
+  - regex: '(?i)ng[àa]y\s*k[ếe]t\s*n[ạa]p\s*(?:đo[àa]n\s*vi[êe]n)?|[ủu]y\s*vi[êe]n\s*BCH|ch[ủu]\s*t[ịi]ch\s*c[ôo]ng\s*đo[àa]n'
+    description: "HR-030p Ngày kết nạp đoàn viên / chức vụ công đoàn"
+    confidence: 0.55
+    context_required: true
+
+keywords:
+  primary:
+    - "chat nội bộ - phòng"
+    - "kế hoạch tuyển dụng"
+    - "kế hoạch đào tạo"
+    - "bản mô tả công việc"
+    - "đoàn viên công đoàn"
+    - "công đoàn cơ sở"
+    - "khung lương theo cấp bậc"
+    - "quy trình đánh giá hiệu suất"
+    - "quy trình đánh giá năng lực"
+    - "bảng chấm công"
+    - "biên bản họp"
+    - "thông báo lịch họp"
+    - "thông báo nội bộ chung"
+    - "thông báo lịch nghỉ lễ"
+    - "ngân sách tuyển dụng"
+    - "ngân sách đào tạo"
+    - "đính kèm hợp đồng lao động"
+    - "thành phần tham dự"
+    - "ngày kết nạp"
+    - "toàn thể nhân viên"
+    - "all staff"
+    - "báo cáo thống kê nhân sự"
+    - "kỳ báo cáo"
+    - "số lượng đầu kỳ"
+    - "số lượng cuối kỳ"
+  secondary:
+    - "phòng nhân sự"
+    - "phòng ban"
+    - "bộ phận"
+    - "nhân viên"
+    - "quản lý trực tiếp"
+    - "hội đồng đánh giá"
+    - "hotline nội bộ"
+    - "chủ tịch công đoàn"
+
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true
+
+# NGƯỠNG CONFIDENCE — phát hiện quan trọng khi debug HR-030q không khớp dù
+# regex đúng (test độc lập bằng Go regexp pass, nhưng engine không trả về
+# match): điểm cuối cùng = pattern.confidence × rule.weight (0.75 ở đây),
+# rồi cộng thêm "distance-weighted context boost" từ keyword lân cận, sau
+# đó so với engine.MinConfidence mặc định = 0.60 (internal/engine/
+# classifier.go). Pattern confidence 0.65 → base 0.65×0.75=0.4875, THẤP HƠN
+# ngưỡng 0.60 — nếu văn bản không đủ keyword lân cận để boost bù đắp
+# (~+0.12 trở lên), match bị loại NGAY TỪ BƯỚC LỌC CONFIDENCE, không bao
+# giờ xuất hiện trong kết quả (không phải lỗi regex hay lỗi context_required
+# — dễ nhầm lẫn khi debug). Với rule.weight=0.75 của rule này, pattern cần
+# confidence ≥ 0.80 mới CHẮC CHẮN vượt ngưỡng 0.60 kể cả KHÔNG có boost —
+# đây là lý do các pattern HR-030m/q/r được nâng lên 0.82. Các pattern
+# "bổ trợ yếu" cố ý (HR-030k/l, confidence 0.55-0.60, context_required:true)
+# CHẤP NHẬN rủi ro hiếm khi tự vượt ngưỡng — vai trò của chúng chỉ là góp
+# thêm 1 khả năng corroborate khi văn bản đủ giàu ngữ cảnh, không phải tín
+# hiệu chính.

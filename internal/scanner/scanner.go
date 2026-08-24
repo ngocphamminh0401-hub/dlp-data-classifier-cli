@@ -103,10 +103,19 @@ func New(cfg Config) *Scanner {
 	var eng *engine.Engine
 	if err == nil {
 		eng = engine.New(rs, engine.EngineConfig{
-			MinConfidence:    cfg.MinConfidence,
-			ContextWindow:    cfg.ContextWindow,
-			FastFail:         cfg.FastFail,
-			EntropyThreshold: 4.5,
+			MinConfidence: cfg.MinConfidence,
+			ContextWindow: cfg.ContextWindow,
+			FastFail:      cfg.FastFail,
+			// EntropyThreshold=0 (tắt): Shannon entropy của văn xuôi tiếng Việt
+			// UTF-8 bình thường (~5.2-5.4 bits/byte, do bảng chữ cái có dấu
+			// nhiều byte) chồng lấn trực tiếp với entropy của secret thật
+			// (JWT ~5.4, base64 API key ~5.1) — không có ngưỡng nào tách được
+			// 2 nhóm này. Hệ quả: gần như MỌI file tiếng Việt > 1KB có dù chỉ
+			// 1 match yếu (1 email, 1 số điện thoại) đều bị đôn lên CONFIDENTIAL
+			// một cách sai lệch. Các rule AUTH_SECRET (credentials_001, cvv_001,
+			// otp_auth_001) đã cover trường hợp secret rõ ràng bằng regex label
+			// + validator chính xác hơn nhiều so với entropy toàn file.
+			EntropyThreshold: 0,
 		})
 	}
 
@@ -207,6 +216,7 @@ func (s *Scanner) ScanFile(path string) (ScanResult, error) {
 			result.Duration = time.Since(start)
 			return result, err
 		}
+		s.applyVolumeEscalation(&result)
 		result.Duration = time.Since(start)
 		return result, nil
 	}
@@ -262,6 +272,7 @@ func (s *Scanner) ScanFile(path string) (ScanResult, error) {
 		}
 	}
 
+	s.applyVolumeEscalation(&result)
 	result.Duration = time.Since(start)
 	return result, nil
 }
@@ -470,6 +481,29 @@ func (s *Scanner) applyScanOutput(out engine.ScanOutput, result *ScanResult, ded
 	}
 }
 
+// applyVolumeEscalation tính số match theo từng RuleID trên TOÀN FILE (đã gộp
+// qua mọi chunk và dedup ở applyScanOutput) rồi hỏi engine xem có rule nào cần
+// nâng level do "khối lượng" match cao không.
+//
+// Phải chạy sau khi TẤT CẢ chunk của file đã scan xong — không thể làm trong
+// Engine.Scan() vì engine chỉ thấy từng chunk 64KB riêng lẻ, không biết tổng số
+// match trong cả file (file lớn có thể bị cắt thành hàng trăm chunk).
+func (s *Scanner) applyVolumeEscalation(result *ScanResult) {
+	if len(result.Matches) == 0 {
+		return
+	}
+	counts := make(map[string]int, len(result.Matches))
+	for _, m := range result.Matches {
+		counts[m.RuleID]++
+	}
+
+	newLevel, _ := s.eng.ApplyVolumeEscalation(counts, unmapLevel(result.Level))
+	if lvl := mapLevel(newLevel); lvl > result.Level {
+		result.Level = lvl
+		result.LevelName = lvl.String()
+	}
+}
+
 func statusFromError(err error) ScanStatus {
 	if err == nil {
 		return StatusOK
@@ -498,6 +532,21 @@ func mapLevel(level engine.ClassificationLevel) Level {
 		return LevelSecret
 	default:
 		return LevelPublic
+	}
+}
+
+// unmapLevel là nghịch đảo của mapLevel — cần để truyền result.Level (đã gộp
+// qua nhiều chunk) trở lại engine.ClassificationLevel cho ApplyVolumeEscalation.
+func unmapLevel(level Level) engine.ClassificationLevel {
+	switch level {
+	case LevelInternal:
+		return engine.Internal
+	case LevelConfidential:
+		return engine.Confidential
+	case LevelSecret:
+		return engine.Secret
+	default:
+		return engine.Public
 	}
 }
 

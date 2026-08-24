@@ -3,10 +3,10 @@
 # Rule có priority cao (credit_card=100, credentials=97) được engine sort lên trước.
 #
 # TỔNG KẾT:
-#   PII      — 9 rules (vn_id, passport, phone, email, dob, vn_name, health, social_insurance, biometric)
-#   Financial— 8 rules (credit_card, bank_account, tax_code_business, tax_code_personal, swift_bic, cvv, iban, income)
-#   Org      — 8 rules (classified_doc x2, contract, internal_code, internal_ip, credentials, watermark, vnpt_email)
-#   TỔNG     — 25 rules
+#   PII      — 11 rules (vn_id, passport, phone, email, dob, vn_name, health, social_insurance, biometric, ethnicity_religion_political, location_tracking)
+#   Financial— 21 rules (credit_card, bank_account, tax_code_business, tax_code_personal, swift_bic, cvv, iban, income, otp_auth, otp_table_header, vip_customer, credit_card_statement, account_statement, transfer_confirmation, internal_chat_customer_data, compliance_report, internal_training_guide, process_change_notice, internal_risk_policy_discussion, internal_branch_financials, loan_approval_process)
+#   Org      — 13 rules (classified_doc x2, contract, internal_code, internal_ip, credentials, watermark, vnpt_email, fraud_investigation, fraud_transaction_flag, business_internal, business_internal_specific, insurance_context)
+#   TỔNG     — 45 rules
 
 includes:
   # ── PII (Thông tin cá nhân — Nghị định 13/2023/NĐ-CP) ─────────────────────
@@ -37,6 +37,13 @@ includes:
   # priority: 30 → họ tên (context-heavy, confidence thấp nhất trong PII)
   - pii/vn_name.yaml
 
+  # priority: 65 → dân tộc/tôn giáo/đảng viên (CONFIDENTIAL, không tự nâng
+  # RESTRICTED theo quyết định team — ETHNICITY_RELIGION_POLITICAL)
+  - pii/ethnicity_religion_political.yaml
+
+  # priority: 63 → dữ liệu vị trí/định vị (CONFIDENTIAL — LOCATION_TRACKING)
+  - pii/location_tracking.yaml
+
   # ── Financial (PCI-DSS + NHNN) ─────────────────────────────────────────────
   # priority: 100 → credit card (SECRET + Luhn) — fast-fail candidate số 1
   - financial/credit_card.yaml
@@ -62,6 +69,50 @@ includes:
   # priority: 52 → lương/thu nhập (CONFIDENTIAL, context-heavy)
   - financial/income.yaml
 
+  # priority: 96 → OTP / PIN giao dịch / mã xác thực giao dịch (SECRET —
+  # AUTH_SECRET, luôn tối mật bất kể ngữ cảnh, GDPR Điều 32)
+  - financial/otp_auth.yaml
+
+  # priority: 91 → header bảng "Số thẻ/CVV/OTP" (SECRET, có level_gate —
+  # bằng chứng gián tiếp, cần ≥2 lần khớp hoặc rule khác ≥ CONFIDENTIAL)
+  - financial/otp_table_header.yaml
+
+  # priority: 90 → danh sách khách hàng VIP/ưu tiên (SECRET, có level_gate —
+  # luôn tối mật bất kể quy mô, khác SCALE_LARGE >50 chung)
+  - financial/vip_customer.yaml
+
+  # priority: 80 → sao kê thẻ tín dụng cá nhân (CONFIDENTIAL, có level_gate)
+  - financial/credit_card_statement.yaml
+
+  # priority: 75 → sao kê tài khoản thanh toán cá nhân (CONFIDENTIAL, có level_gate)
+  - financial/account_statement.yaml
+
+  # priority: 78 → email xác nhận giao dịch chuyển khoản (CONFIDENTIAL, có level_gate)
+  - financial/transfer_confirmation.yaml
+
+  # priority: 88 → chat nội bộ tiết lộ dữ liệu tài khoản khách hàng
+  # (CONFIDENTIAL — đã hạ từ SECRET sau khi đối chiếu dữ liệu thật)
+  - financial/internal_chat_customer_data.yaml
+
+  # priority: 40 → báo cáo tuân thủ/giám sát định kỳ, không PII/giao dịch cụ thể (INTERNAL)
+  - financial/compliance_report.yaml
+
+  # priority: 35 → tài liệu đào tạo/hướng dẫn quy trình nghiệp vụ nội bộ (INTERNAL)
+  - financial/internal_training_guide.yaml
+
+  # priority: 35 → thông báo thay đổi quy trình nghiệp vụ nội bộ (INTERNAL)
+  - financial/process_change_notice.yaml
+
+  # priority: 35 → trao đổi nội bộ xây dựng chính sách quản lý rủi ro (INTERNAL)
+  - financial/internal_risk_policy_discussion.yaml
+
+  # priority: 45 → trao đổi nội bộ số liệu kinh doanh chi nhánh chưa kiểm
+  # toán (INTERNAL, có level_gate)
+  - financial/internal_branch_financials.yaml
+
+  # priority: 35 → quy trình thẩm định/phê duyệt hồ sơ vay nội bộ (INTERNAL)
+  - financial/loan_approval_process.yaml
+
   # ── Org (Tài liệu và hạ tầng tổ chức) ────────────────────────────────────
   # priority: 97 → credentials (SECRET — fast-fail candidate số 2)
   - org/credentials.yaml
@@ -71,6 +122,14 @@ includes:
 
   # priority: 94 → tài liệu mật cấp CONFIDENTIAL (BÍ MẬT / CONFIDENTIAL)
   - org/classified_doc_002.yaml
+
+  # priority: 93 → điều tra gian lận / AML / hình sự (SECRET — CRIMINAL_AML,
+  # luôn tối mật bất kể ngữ cảnh, GDPR Điều 10)
+  - org/fraud_investigation.yaml
+
+  # priority: 88 → "giao dịch đáng ngờ/bất thường" (SECRET, có level_gate —
+  # tách riêng vì dễ bị phủ định "Không có giao dịch bất thường")
+  - org/fraud_transaction_flag.yaml
 
   # priority: 60 → hợp đồng + mã PO (CONFIDENTIAL — ISO 27001 A.5.12)
   - org/contract.yaml
@@ -87,6 +146,28 @@ includes:
   # priority: 40 → mã nội bộ VNPT (INTERNAL)
   - org/internal_code.yaml
 
+  # priority: 45 → ngữ cảnh hồ sơ bồi thường/claim bảo hiểm (CONFIDENTIAL —
+  # tag phụ trợ cho compound rule Health+Financial+Insurance Context)
+  - org/insurance_context.yaml
+
+  # priority: 38 → văn bản nghiệp vụ nội bộ thông thường (INTERNAL, có
+  # level_gate — BUSINESS_INTERNAL, rule dự phòng đánh giá sau cùng)
+  - org/business_internal.yaml
+
+  # priority: 39 → từ vựng nghiệp vụ nội bộ đặc thù NH/bảo hiểm (INTERNAL,
+  # KHÔNG gate — cụm từ đặc thù thường chỉ xuất hiện 1 lần, rủi ro FP thấp)
+  - org/business_internal_specific.yaml
+  - org/healthcare_internal_business.yaml
+
+  # ── HR ─────────────────────────────────────────────────────────────────
+  - hr/party_membership_dossier.yaml
+  - hr/disciplinary_health_investigation.yaml
+  - hr/internal_chat_protected_attributes.yaml
+  - hr/sexual_harassment_complaint.yaml
+  - hr/workplace_accident_investigation.yaml
+  - hr/hr_internal_business.yaml
+  - hr/offer_letter.yaml
+
 # ── Compound rules ─────────────────────────────────────────────────────────
 # Kết hợp nhiều category → nâng cấp độ phân loại.
 # Conditions khớp với: category, ruleID đầy đủ, ruleID prefix, category_prefix.
@@ -95,18 +176,22 @@ includes:
 # min_component_level: chỉ trigger khi MỖI condition có match ≥ level đó.
 # violation_type: mã vi phạm để trigger workflow riêng (audit log, alert, ticket).
 # alert_priority: mức ưu tiên cảnh báo — CRITICAL | HIGH | MEDIUM.
+#
+# ĐÃ RÀ SOÁT LẠI TOÀN BỘ (đối chiếu tài liệu "Bộ rule kết hợp Regex để phân
+# loại mức độ nhạy cảm", Phần 3 — Thuật toán quyết định): theo Bước 5 của
+# tài liệu, PII_DIRECT và/hoặc FIN_ACCOUNT — dù kết hợp với bao nhiêu loại
+# định danh khác (CCCD+SĐT+TK, CCCD+DOB+Tên, hộ chiếu+CCCD, BHXH+CCCD...) —
+# CHỈ dừng ở CONFIDENTIAL, KHÔNG tự động SECRET, TRỪ KHI có thêm AUTH_SECRET,
+# CRIMINAL_AML, quy mô >50, hoặc HEALTH_RESTRICTED (Bước 1-4). Một loạt
+# compound rule cũ (PII+Financial=SECRET, Full identity set, Full PII set,
+# Health+Identity, Biometric+Identity, Passport+Identity, Social Insurance+
+# Identity, SWIFT+IBAN, Biometric+Financial) đã VI PHẠM nguyên tắc này —
+# tự động nâng SECRET chỉ vì 2-3 loại PII/financial CONFIDENTIAL cùng xuất
+# hiện, khiến rất nhiều văn bản PUBLIC/INTERNAL/CONFIDENTIAL bình thường
+# (hợp đồng có tên+CCCD+số TK, hồ sơ có tên+ngày sinh...) bị đẩy nhầm lên
+# RESTRICTED. Đã gỡ các rule này; chỉ giữ lại compound có căn cứ trực tiếp
+# trong tài liệu hoặc không thực sự thay đổi kết quả (rule đã SECRET sẵn).
 compound_rules:
-
-  # ── CORE PII + FINANCIAL ──────────────────────────────────────────────────
-
-  # [PII nhạy cảm + Financial nhạy cảm] → bộ dữ liệu đủ để đánh cắp danh tính
-  # min_component_level: CONFIDENTIAL tránh false positive:
-  #   email(INTERNAL) + BIC(INTERNAL) → KHÔNG phải SECRET
-  #   CCCD(CONFIDENTIAL) + credit_card(SECRET) → SECRET ✓
-  - name: "PII (sensitive) + Financial (sensitive) = SECRET"
-    conditions: [pii, financial]
-    min_component_level: CONFIDENTIAL
-    result_level: SECRET
 
   # [Hợp đồng + PII] — dùng org_contract (không phải org) để tránh:
   #   watermark(INTERNAL) + email(INTERNAL) → CONFIDENTIAL (sai)
@@ -114,19 +199,6 @@ compound_rules:
   - name: "Contract + PII = CONFIDENTIAL"
     conditions: [org_contract, pii]
     result_level: CONFIDENTIAL
-
-  # ── FULL IDENTITY SETS ────────────────────────────────────────────────────
-
-  # [CCCD + Số TK + SĐT] → bộ 3 yếu tố đủ để mở tài khoản gian lận
-  - name: "Full identity set (CCCD + phone + bank) = SECRET"
-    conditions: [pii_vn_id, pii_phone, financial]
-    result_level: SECRET
-
-  # [CCCD + Ngày sinh + Họ tên] → quasi-identifier đầy đủ (NIST SP 800-188)
-  # Tag engine tự sinh: category("pii") + "_" + ruleIDPrefix("vn_name_001" → "vn_name")
-  - name: "Full PII set (CCCD + DOB + Name) = SECRET"
-    conditions: [pii_vn_id, pii_dob, pii_vn_name]
-    result_level: SECRET
 
   # ── PCI-DSS ───────────────────────────────────────────────────────────────
 
@@ -156,8 +228,17 @@ compound_rules:
 
   # [Email VNPT + Tài liệu TỐI MẬT/MẬT/RESTRICTED] → tài liệu mật nhà nước VNPT
   # classified_doc_001: ruleID đầy đủ trong tagSet → chỉ match rule SECRET-level
+  #
+  # min_component_level: SECRET là BẮT BUỘC ở đây (khác các compound khác) vì
+  # classified_doc_001 có level_gate (level_gate.go: hạ về CONFIDENTIAL nếu
+  # thiếu corroboration). Compound rule mặc định chỉ kiểm tra TAG có mặt
+  # (rule đã match), KHÔNG kiểm tra level hiện tại — nên nếu thiếu điều kiện
+  # này, 1 match "TỐI MẬT" đơn lẻ đã bị gate hạ xuống CONFIDENTIAL vẫn có thể
+  # bị compound này "hồi sinh" về SECRET chỉ vì cùng chunk có email VNPT,
+  # vô hiệu hóa hoàn toàn mục đích của level_gate.
   - name: "VNPT email + Classified SECRET doc = SECRET"
     conditions: [vnpt_email, classified_doc_001]
+    min_component_level: SECRET
     result_level: SECRET
 
   # [Email VNPT + Tài liệu BÍ MẬT/CONFIDENTIAL] → tài liệu bí mật thương mại VNPT
@@ -174,49 +255,102 @@ compound_rules:
     conditions: [pii_phone, financial]
     result_level: CONFIDENTIAL
 
-  # [SWIFT BIC + IBAN] → định tuyến + số TK đầy đủ → đủ khởi tạo SEPA transfer
-  # EU PSD2 Art.74: payment initiation data cần mức bảo vệ cao nhất
-  - name: "SWIFT BIC + IBAN = SECRET (PSD2 Art.74)"
-    conditions: [financial_swift_bic, financial_iban]
+  # ĐÃ GỠ (không có căn cứ trong tài liệu, gây over-classify — xem ghi chú
+  # đầu mục compound_rules): "SWIFT BIC + IBAN = SECRET", "Health + Identity
+  # = SECRET (HIPAA PHI)", "Biometric + Identity = SECRET", "Passport +
+  # Identity = SECRET", "Health + Financial = SECRET", "Biometric +
+  # Financial = SECRET", "Social Insurance + Identity = SECRET". Riêng
+  # HEALTH_RESTRICTED (HIV/AIDS/tâm thần) và dữ liệu sinh trắc THẬT (template/
+  # embedding) đã tự SECRET ngay ở rule gốc (pii/health.yaml, pii/biometric.yaml)
+  # — không cần compound mới đạt được đúng mức.
+
+  # ── BƯỚC 2 TÀI LIỆU: TỔ HỢP ĐẶC THÙ DOMAIN (siết điều kiện, không domain-gate) ──
+  # Engine không có khái niệm "domain" (finance_banking/insurance/hr/
+  # healthcare) — 2 compound dưới đây áp dụng chung mọi domain nhưng SIẾT
+  # điều kiện kích hoạt để giảm rủi ro sai domain, theo quyết định đã thống
+  # nhất khi lên kế hoạch (không xây domain-detection).
+
+  # [Location Tracking + Financial] → Bước 2: finance_banking domain-specific
+  # combo (FIN_ACCOUNT + LOCATION_TRACKING). min_component_level: CONFIDENTIAL
+  # trên cả 2 điều kiện — chỉ nổ khi cả 2 match đều đạt CONFIDENTIAL thật.
+  - name: "Location Tracking + Financial = SECRET"
+    conditions: [pii_location_tracking, financial]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
 
-  # [Y tế + Định danh cụ thể] → PHI đầy đủ (HIPAA Safe Harbor §164.514)
-  # Dùng pii_vn_id (cụ thể) thay vì pii (quá rộng — email cũng là pii)
-  - name: "Health + Identity = SECRET (HIPAA PHI)"
-    conditions: [pii_health, pii_vn_id]
-    result_level: SECRET
-    violation_type: HIPAA_PHI
-
-  # [Sinh trắc học + Định danh cụ thể] → không thể thu hồi (NĐ 13/2023, GDPR Art.9)
-  - name: "Biometric + Identity = SECRET (irrecoverable)"
-    conditions: [pii_biometric, pii_vn_id]
-    result_level: SECRET
-    violation_type: BIOMETRIC_IDENTITY_COMBINATION
-
-  # ── 7 COMPOUND RULES MỚI ─────────────────────────────────────────────────
-
-  # T1 — Hộ chiếu + CCCD: đủ để giả mạo danh tính trong + ngoài nước
-  # ICAO Doc 9303, NIST SP 800-63-3 IAL3
-  - name: "Passport + Identity = SECRET (ICAO identity fraud)"
-    conditions: [pii_passport, pii_vn_id]
+  # [Health + Insurance Context] → Bước 2: insurance domain-specific combo,
+  # thay thế "Health+Financial=SECRET" đã gỡ (quá rộng — tự nổ trên bất kỳ
+  # file nào có cả sức khỏe + tài chính, VD: hợp đồng lao động có mục BHYT
+  # + lương). Bắt buộc org_insurance_context (rules/org/insurance_context.
+  # yaml — "bồi thường"/"claim"/"định phí") thay vì yêu cầu thêm match
+  # financial/pii_vn_id riêng: bản thân ngữ cảnh "hồ sơ bồi thường" ĐÃ LÀ
+  # tín hiệu "dùng để ra quyết định tài chính" theo GDPR Điều 35/Lớp 2 (tài
+  # liệu bổ sung GDPR) — không cần thêm bằng chứng số tài khoản/CCCD cụ thể
+  # mới coi là đủ (nhiều hồ sơ bồi thường thực tế chỉ có họ tên, không có
+  # CCCD hay số TK, xác nhận qua ví dụ thật insurance__top_secret).
+  - name: "Health + Insurance Context = SECRET"
+    conditions: [pii_health, org_insurance_context]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
 
-  # T2 — Y tế + Tài chính: gian lận bảo hiểm điển hình (HIPAA, PCI-DSS)
-  - name: "Health + Financial = SECRET (insurance fraud enabler)"
-    conditions: [pii_health, financial]
+  # ── HR: DÂN TỘC/TÔN GIÁO + IDENTITY/FINANCIAL/HEALTH ────────────────────
+  # Đảo ngược quyết định team ban đầu (pii/ethnicity_religion_political.yaml
+  # header) sau khi có dataset hr__* thật: 597/1600 file hr__top_secret bị
+  # under-classify vì rule gốc chủ động không leo thang. Dữ liệu thật cho
+  # thấy "Dân tộc:/Tôn giáo:" (nhãn field, không phải văn xuôi — nhánh văn
+  # xuôi confidence thấp đã bị xóa vì lỗi phủ định) kết hợp CCCD/hộ chiếu/
+  # BHXH/tài chính/sức khỏe trong hồ sơ nhân viên có tên thật = RESTRICTED
+  # theo đúng "combination amplification" tài liệu gốc. min_component_level:
+  # CONFIDENTIAL đảm bảo cả 2 vế đều match thật (không phải regex yếu).
+  # ĐÃ THỬ TẮT CẢ 5 để đo đóng góp thật trên healthcare — xác nhận đúng là
+  # các compound này vi phạm G1 khi áp cho hồ sơ y tế thường quy (Dân tộc +
+  # CCCD/BHYT/SĐT là thu thập nhân khẩu học THƯỜNG QUY trong mẫu bệnh án
+  # VN). NHƯNG tắt hẳn gây HỒI QUY NẶNG trên hr__top_secret (83.7%→60.2%,
+  # -376 file — chính là 597 file đã sửa trước đó).
+  #
+  # ĐÃ THỬ thêm context_conditions:[hr] (field mới, xem CompoundRule.
+  # ContextConditions trong internal/engine/rules.go — tag "hr" phải CÓ MẶT
+  # bất kể level, không bị ràng buộc bởi min_component_level dùng chung như
+  # nếu nhét vào conditions). Vẫn KHÔNG đủ: hr TOP_SECRET chỉ phục hồi lên
+  # 63.7% (không phải 83.7%) — xác nhận qua hr_top_00001.docx (bảng lương
+  # thưởng điều hành, ground truth TOP_SECRET) rằng nhiều file trong 597 file
+  # gốc KHÔNG khớp BẤT KỲ rule nào trong hr/*.yaml (kể cả hr_internal_
+  # business_001 catch-all) — chúng chỉ có Dân tộc + CCCD/lương/BHXH, không
+  # có nội dung kỷ luật/điều tra/quấy rối/kết nạp đảng đặc thù. Tag "hr"
+  # KHÔNG phải discriminator đáng tin cậy giữa "hồ sơ nhân viên" và "hồ sơ
+  # bệnh nhân" — không có tín hiệu sẵn có nào trong ruleset hiện tại phân
+  # biệt được 2 domain này một cách an toàn (đúng bản chất vấn đề "không có
+  # domain-detection" đã quyết định trước đó).
+  #
+  # ĐÃ PHỤC HỒI về 2 điều kiện gốc (ưu tiên recall RESTRICTED/SECRET thật
+  # theo mục K bước 5) — chấp nhận residual over-classification trên
+  # healthcare (~100 file, đã trình bày với người dùng) thay vì tiếp tục
+  # risk làm hỏng cả 2 domain. Field context_conditions vẫn giữ lại trong
+  # engine (không revert code) vì bản thân cơ chế đúng/hữu ích cho các
+  # trường hợp tương lai có tín hiệu domain rõ ràng hơn.
+  - name: "Ethnicity/Religion + Identity (CCCD) = SECRET"
+    conditions: [pii_ethnicity_religion_political, pii_vn_id]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
-    violation_type: HEALTH_FINANCIAL_COMBINATION
 
-  # T3 — Sinh trắc học + Tài chính: chiếm đoạt tài khoản không phục hồi
-  # NĐ 13/2023 Điều 2 Khoản 4, GDPR Art.9(1)
-  - name: "Biometric + Financial = Irrecoverable SECRET"
-    conditions: [pii_biometric, financial]
+  - name: "Ethnicity/Religion + Passport = SECRET"
+    conditions: [pii_ethnicity_religion_political, pii_passport]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
-    violation_type: BIOMETRIC_FINANCIAL_COMBINATION
 
-  # T4 — BHXH/BHYT + CCCD: gian lận bảo hiểm xã hội (NĐ 13/2023)
-  - name: "Social Insurance + Identity = SECRET (NĐ13/2023)"
-    conditions: [pii_social_insurance, pii_vn_id]
+  - name: "Ethnicity/Religion + Social Insurance = SECRET"
+    conditions: [pii_ethnicity_religion_political, pii_social_insurance]
+    min_component_level: CONFIDENTIAL
+    result_level: SECRET
+
+  - name: "Ethnicity/Religion + Financial = SECRET"
+    conditions: [pii_ethnicity_religion_political, financial]
+    min_component_level: CONFIDENTIAL
+    result_level: SECRET
+
+  - name: "Ethnicity/Religion + Health = SECRET"
+    conditions: [pii_ethnicity_religion_political, pii_health]
+    min_component_level: CONFIDENTIAL
     result_level: SECRET
 
   # T5 — Tổ hợp 3 PII cơ bản: re-identification risk (GDPR Recital 26, NIST SP 800-188)
@@ -236,3 +370,4 @@ compound_rules:
   - name: "Internal IP + Internal Code = CONFIDENTIAL (network recon)"
     conditions: [org_internal_ip, org_internal_code]
     result_level: CONFIDENTIAL
+ 

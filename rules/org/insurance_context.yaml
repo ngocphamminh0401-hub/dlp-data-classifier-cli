@@ -1,0 +1,101 @@
+# ORG-008 — Ngữ cảnh hồ sơ bồi thường/claim bảo hiểm (tag phụ trợ)
+# Rule này KHÔNG tự thân quan trọng — mục đích DUY NHẤT là gán tag
+# "org_insurance_context" cho compound rule "Health + Financial + Insurance
+# Context = SECRET" trong rules.yaml, thay thế compound "Health+Financial=
+# SECRET" đã gỡ (quá rộng, tự nổ trên bất kỳ file nào có cả sức khỏe +
+# tài chính — VD: hợp đồng lao động có mục BHYT + lương). Bắt buộc thêm
+# điều kiện thứ 3 này để chỉ nổ khi rõ ràng là hồ sơ claim bảo hiểm dùng
+# chẩn đoán y tế để định phí/chi trả, đúng mô tả trong tài liệu (Bước 2,
+# domain bảo hiểm).
+#
+# level: CONFIDENTIAL (không phải INTERNAL) là BẮT BUỘC: compound rule dùng
+# min_component_level: CONFIDENTIAL áp dụng đồng nhất cho MỌI condition
+# (field MinComponentLevel trong CompoundRule là scalar dùng chung — xác
+# nhận từ internal/engine/rules.go, không hỗ trợ ngưỡng riêng từng điều
+# kiện) — nếu rule này ở INTERNAL, nó sẽ không bao giờ tự thỏa min_component
+# _level của chính compound rule đó.
+#
+# Có thể validate qua eval_confusion.go --domain insurance (khác các rule
+# HR/y tế khác trong đợt này) vì insurance đã có 1601 file thật.
+
+id: insurance_context_001
+name: "ORG-008 Ngữ cảnh hồ sơ bồi thường/claim bảo hiểm"
+category: org
+level: CONFIDENTIAL
+weight: 0.80
+priority: 45
+tags: [org, insurance_context, insurance_claim]
+enabled: true
+
+patterns:
+  # "hồ sơ yêu cầu bồi thường" thực tế hay chêm "yêu cầu" giữa "hồ sơ" và
+  # "bồi thường" (VD: "HỒ SƠ YÊU CẦU BỒI THƯỜNG") — thêm (?:yêu\s*cầu\s*)?
+  # tùy chọn thay vì yêu cầu 2 từ đứng sát nhau.
+  - regex: '(?i)(?:bồi\s*thường\s*bảo\s*hiểm|chi\s*trả\s*bảo\s*hiểm|định\s*phí\s*bảo\s*hiểm|hồ\s*sơ\s*(?:yêu\s*cầu\s*)?bồi\s*thường|insurance\s*claim|claim\s*settlement|underwriting)'
+    description: "Cụm từ hồ sơ claim/bồi thường/định phí bảo hiểm"
+    confidence: 0.80
+    context_required: false
+
+  # "yêu cầu bồi thường" đứng riêng (không cần "hồ sơ" trước) — VD thực tế:
+  # "BẢNG DANH SÁCH KHÁCH HÀNG YÊU CẦU BỒI THƯỜNG". Cụ thể hơn "bồi thường"
+  # đơn lẻ (đã thử và gỡ vì quá rộng — xem ghi chú dưới) nhờ có "yêu cầu"
+  # ngụ ý 1 claim đang được xử lý, không phải điều khoản/quy tắc chung.
+  - regex: '(?i)yêu\s*cầu\s*bồi\s*thường'
+    description: "Yêu cầu bồi thường (claim đang xử lý)"
+    confidence: 0.78
+    context_required: false
+
+  # Thẩm định bảo hiểm/sức khỏe/rủi ro — ngữ cảnh underwriting (khám sức
+  # khỏe để cấp hợp đồng, không phải claim, nhưng cùng mức rủi ro theo
+  # tài liệu: dùng dữ liệu sức khỏe để RA QUYẾT ĐỊNH TÀI CHÍNH/pháp lý).
+  #
+  # THỬ XÓA rồi PHỤC HỒI "thẩm định rủi ro" bare: nghi ngờ đây là nguồn FP
+  # cross-domain qua fin_int_00047.docx (quy chế Hội đồng tín dụng, không
+  # liên quan bảo hiểm, có "Báo cáo thẩm định rủi ro" trong danh mục hồ sơ
+  # tín dụng) — nhưng kiểm chứng A/B trực tiếp cho thấy xóa pattern này
+  # KHÔNG cải thiện finance_banking (INTERNAL accuracy giữ nguyên 82.5% dù
+  # xóa hay giữ — 24 file quy chế Hội đồng tín dụng đã được sửa đủ nhờ fix
+  # classified_doc_002 "BÍ MẬT" viết hoa), trong khi làm mất 14 file
+  # insurance__top_secret thật (87.2%→86.1%). Giữ lại nguyên bản: lợi ích
+  # không đủ bù chi phí.
+  - regex: '(?i)(?:thẩm\s*định\s*bảo\s*hiểm|thẩm\s*định\s*sức\s*khỏe|thẩm\s*định\s*rủi\s*ro|khám\s*sức\s*khỏe\s*thẩm\s*định|cấp\s*hợp\s*đồng\s*bảo\s*hiểm)'
+    description: "Thẩm định bảo hiểm/sức khỏe/rủi ro (underwriting)"
+    confidence: 0.78
+    context_required: false
+
+  # Khởi kiện/tranh chấp bảo hiểm — hồ sơ tố tụng dân sự liên quan hợp đồng
+  # bảo hiểm, thường đi kèm dữ liệu sức khỏe/tài chính chi tiết dùng làm
+  # chứng cứ.
+  - regex: '(?i)(?:khởi\s*kiện|tranh\s*chấp\s*bảo\s*hiểm|tố\s*tụng\s*bảo\s*hiểm)'
+    description: "Khởi kiện/tranh chấp/tố tụng bảo hiểm"
+    confidence: 0.80
+    context_required: false
+
+  # ĐÃ THỬ VÀ GỠ: "bồi thường" đứng riêng — xác nhận qua eval_confusion.go
+  # (--domain insurance) rằng từ này RẤT phổ biến trong "Điều khoản/quy tắc
+  # bồi thường bảo hiểm" — chính là loại tài liệu PUBLIC mẫu theo tài liệu
+  # gốc ("Điều khoản/quy tắc bảo hiểm mẫu đã công bố"), không phải hồ sơ
+  # bồi thường thật. Bật pattern này khiến PUBLIC→CONFIDENTIAL tăng vọt
+  # (336→744/1600). Giữ lại cụm từ ghép cụ thể ở trên (đủ đặc trưng hơn).
+
+keywords:
+  primary:
+    - "bồi thường"
+    - "yêu cầu bồi thường"
+    - "claim"
+    - "chi trả bảo hiểm"
+    - "định phí"
+    - "thẩm định bảo hiểm"
+    - "thẩm định sức khỏe"
+    - "thẩm định rủi ro"
+    - "khởi kiện"
+    - "tranh chấp bảo hiểm"
+    - "underwriting"
+  secondary:
+    - "hợp đồng bảo hiểm"
+    - "phí bảo hiểm"
+    - "công ty bảo hiểm"
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

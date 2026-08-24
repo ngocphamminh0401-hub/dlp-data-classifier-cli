@@ -35,7 +35,7 @@ patterns:
   # Loại bỏ: no-reply@, noreply@, donotreply@, bounce@, mailer-daemon@
   - regex: '[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,7}'
     description: "Email chuẩn (mọi domain) — tổng quát"
-    confidence: 0.88
+    confidence: 0.70
     context_required: false
 
 keywords:
@@ -59,3 +59,17 @@ false_positive_reduction:
   # nên rule KHÔNG bị skip dù keywords: [] trước đây.
   # Keywords được thêm để cải thiện context boost score (0 → +0.15/+0.30).
   exclude_if_no_keywords: false
+
+# Volume escalation: 1 email lẻ chỉ là INTERNAL, nhưng danh sách hàng loạt
+# email trong cùng 1 file (leak database khách hàng) là rủi ro khác hẳn.
+# Ngưỡng đầu (→CONFIDENTIAL) sửa 20→50 để khớp ngưỡng SCALE_LARGE >50 theo
+# quyết định team (tài liệu "Bộ rule kết hợp Regex", mục 6.3) — email là 1
+# dạng PII_DIRECT như CCCD/SĐT, cùng chung 1 ngưỡng quy mô lớn. Ngưỡng
+# 200→SECRET giữ nguyên (tài liệu không định nghĩa ngưỡng SECRET riêng cho
+# quy mô cực lớn — 200 là bậc "mất mát hàng loạt" hợp lý cao hơn hẳn 50).
+volume_escalation:
+  thresholds:
+    - min_count: 50
+      escalate_to: CONFIDENTIAL
+    - min_count: 200
+      escalate_to: SECRET

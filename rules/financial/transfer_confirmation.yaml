@@ -1,0 +1,56 @@
+# FIN-014 — Email/thông báo xác nhận giao dịch chuyển khoản (tự động)
+# Đặc trưng: email hệ thống tự động (notify@...) xác nhận 1 giao dịch cụ thể,
+# gồm định danh khách hàng + số TK nguồn/thụ hưởng (đã che một phần) + số
+# tiền + mã tham chiếu giao dịch. Khác sao kê (FIN-012/013) ở chỗ đây là
+# thông báo đơn lẻ theo thời gian thực, không phải tổng hợp theo kỳ.
+
+id: fin_transfer_confirmation_001
+name: "FIN-014 Email xác nhận giao dịch chuyển khoản"
+category: financial
+level: CONFIDENTIAL
+weight: 0.78
+priority: 78
+tags: [financial, transaction_notification, pii]
+enabled: true
+
+patterns:
+  # Tiêu đề xác nhận giao dịch thành công
+  - regex: '(?i)x[áa]c\s*nh[ậa]n\s*giao\s*d[ịi]ch\s*chuy[ểe]n\s*kho[ảa]n\s*(?:th[àa]nh\s*c[ôo]ng)?'
+    description: "FIN-014a Tiêu đề xác nhận giao dịch chuyển khoản"
+    confidence: 0.88
+    context_required: false
+
+  # Cặp trường tài khoản nguồn/thụ hưởng kèm số che một phần
+  - regex: '(?i)(?:t[àa]i\s*kho[ảa]n\s*(?:ngu[ồo]n|th[ụu]\s*h[ưu][ởo]ng))\s*[:]?\s*\*{2,4}\d{3,6}'
+    description: "FIN-014b Số tài khoản nguồn/thụ hưởng che một phần"
+    confidence: 0.82
+    context_required: false
+
+  # Mã giao dịch tham chiếu dạng chuỗi (vd FT240528114823ABC)
+  - regex: '(?i)m[ãa]\s*giao\s*d[ịi]ch\s*(?:tham\s*chi[ếe]u)?\s*[:]?\s*[A-Z]{2}\d{10,}[A-Z]*'
+    description: "FIN-014c Mã giao dịch tham chiếu"
+    confidence: 0.75
+    context_required: false
+
+keywords:
+  primary:
+    - "xác nhận giao dịch"
+    - "chuyển khoản thành công"
+    - "tài khoản thụ hưởng"
+    - "tài khoản nguồn"
+    - "mã giao dịch tham chiếu"
+  secondary:
+    - "số dư khả dụng sau giao dịch"
+    - "ngân hàng thụ hưởng"
+    - "nếu quý khách không thực hiện giao dịch này"
+
+# Cần corroboration: cụm "xác nhận giao dịch" một mình có thể xuất hiện
+# trong FAQ/hướng dẫn chung của ngân hàng. Phải đi kèm số TK cụ thể (che
+# một phần) HOẶC mã giao dịch tham chiếu thực tế trong cùng chunk.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false

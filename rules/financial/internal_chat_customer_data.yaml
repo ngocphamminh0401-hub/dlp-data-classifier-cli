@@ -1,0 +1,90 @@
+# FIN-015 — Trao đổi nội bộ nhân viên tiết lộ số dư/lịch sử GD khách hàng qua
+# kênh chat không chính thức
+# Phát hiện qua thực tế: nhân viên (CSKH/giao dịch viên/trưởng nhóm) trao
+# đổi số tài khoản, số dư, lịch sử giao dịch của MỘT khách hàng cụ thể qua
+# chat nội bộ (Slack/Teams/chat công ty) thay vì qua hệ thống core banking
+# có kiểm soát/audit trail chính thức. Rủi ro nằm ở KÊNH disclosure sai quy
+# trình (dễ bị chụp màn hình/forward/rò rỉ ra ngoài, không có access log),
+# không phụ thuộc số lượng khách hàng được nhắc tới — 1 khách hàng bị lộ số
+# dư qua chat nội bộ vẫn đủ nghiêm trọng để xếp SECRET, tương tự logic
+# ngữ cảnh của rule VIP (FIN-011), khác với sao kê chính thức (FIN-012/013,
+# CONFIDENTIAL) vốn đi qua kênh có kiểm soát.
+#
+# LƯU Ý TRIỂN KHAI: bản gốc có thêm false_positive_reduction.exclude_patterns
+# để loại trừ đoạn chat đào tạo/quy trình chung — đã BỎ vì FPReduction trong
+# engine (internal/engine/rules.go) chỉ có 4 field: min_context_window,
+# exclude_if_no_keywords, luhn_required, cvv_expiry_boost — không có
+# exclude_patterns. YAML không lỗi (unknown field bị bỏ qua âm thầm) nhưng
+# field đó sẽ KHÔNG có tác dụng gì nếu giữ lại. level_gate bên dưới (bắt
+# buộc có số dư/số TK cụ thể đi kèm mới lên SECRET) đã che được phần lớn
+# trường hợp "chat đào tạo chung" vì nội dung đó thường không có số liệu
+# khách hàng cụ thể — nhưng đây là bằng chứng gián tiếp, không phải loại
+# trừ trực tiếp theo cụm từ như thiết kế gốc.
+#
+# ĐÃ HẠ TỪ SECRET XUỐNG CONFIDENTIAL sau khi đối chiếu dữ liệu thật: xác
+# nhận qua eval_confusion.go (--domain finance_banking) rule này (ban đầu
+# SECRET) đẩy sai 55/76 file — chủ yếu sub_type "chat_noi_bo_tra_cuu_tai_
+# khoan" với is_borderline=false (dataset khẳng định CHẮC CHẮN, không mơ
+# hồ) rằng chat nội bộ tra cứu tài khoản (tên+số TK+số dư, CHƯA xác nhận
+# AML/vi phạm) chỉ ở mức CONFIDENTIAL — cùng logic với
+# fraud_transaction_flag_001 (giao dịch bất thường chưa xác nhận không tự
+# động SECRET). Xác nhận với người dùng: ưu tiên khớp dữ liệu thật thay vì
+# giữ giả định "kênh sai quy trình luôn SECRET" ban đầu. Vẫn giữ nguyên
+# level_gate/patterns để phát hiện đúng loại vi phạm (kênh không chính
+# thức), chỉ đổi mức độ nhạy cảm gán cho nó.
+
+id: fin_internal_chat_customer_data_001
+name: "FIN-015 Chat nội bộ tiết lộ dữ liệu tài khoản khách hàng"
+category: financial
+level: CONFIDENTIAL
+weight: 0.88
+priority: 88
+tags: [financial, internal_disclosure, unauthorized_channel, pii]
+enabled: true
+
+patterns:
+  # Nhãn vai trò nhân viên trong chat nội bộ ngân hàng
+  - regex: '(?i)\((?:CSKH|Giao\s*d[ịi]ch\s*vi[êe]n|Tr[ưu][ởo]ng\s*nh[óo]m|Ch[ăa]m\s*s[óo]c\s*kh[áa]ch\s*h[àa]ng)\)'
+    description: "FIN-015a Nhãn vai trò nhân viên trong chat nội bộ"
+    confidence: 0.70
+    context_required: true
+
+  # Số dư/lịch sử giao dịch được dán trực tiếp trong hội thoại (dạng bảng
+  # hoặc câu văn "số dư hiện tại là ... VNĐ")
+  - regex: '(?i)s[ốo]\s*d[ưu]\s*(?:sau\s*GD|hi[ệe]n\s*t[ạa]i|t[àa]i\s*kho[ảa]n)\s*(?:l[àa]|hi[ệe]n\s*l[àa])?\s*[:]?\s*[\d.,]+\s*(?:VND|VN[ĐD])'
+    description: "FIN-015b Số dư tài khoản khách hàng tiết lộ trong chat"
+    confidence: 0.80
+    context_required: false
+
+  # Số tài khoản khách hàng bị lộ với mức che thấp hơn chuẩn (nhiều hơn 6
+  # chữ số hiển thị, ví dụ 6336642008xx) — dấu hiệu che số không đúng quy
+  # chuẩn nội bộ, rủi ro cao hơn số được che chuẩn (****3421)
+  - regex: '\b\d{8,}[xX]{1,3}\b'
+    description: "FIN-015c Số tài khoản che không đúng chuẩn (>=8 số hiển thị)"
+    confidence: 0.75
+    context_required: true
+
+keywords:
+  primary:
+    - "kiểm tra lại thông tin tài khoản"
+    - "lịch sử giao dịch"
+    - "số dư"
+    - "xác nhận giao dịch"
+  secondary:
+    - "giao dịch viên"
+    - "trưởng nhóm"
+    - "CSKH"
+    - "không có dấu hiệu bất thường"
+    - "cần bổ sung xác minh"
+
+# Cần corroboration NGHIÊM: chỉ có nhãn vai trò (CSKH/Giao dịch viên) không
+# đủ — rất nhiều hội thoại nội bộ hợp lệ (đào tạo, quy trình chung) có các
+# nhãn này mà không chứa dữ liệu khách hàng cụ thể. Bắt buộc phải có SỐ DƯ
+# hoặc SỐ TÀI KHOẢN cụ thể xuất hiện cùng chunk mới nâng lên SECRET.
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
+false_positive_reduction:
+  min_context_window: 120
+  exclude_if_no_keywords: false

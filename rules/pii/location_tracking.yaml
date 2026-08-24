@@ -1,0 +1,73 @@
+# PII-011 — Dữ liệu vị trí / định vị (flag LOCATION_TRACKING theo tài liệu
+# "Bộ rule kết hợp Regex"). Theo NĐ13/2023 (GDPR không liệt kê riêng nhóm
+# này) — tọa độ GPS, lịch sử di chuyển, dữ liệu định vị gắn với cá nhân.
+#
+# QUYẾT ĐỊNH TEAM: giữ CONFIDENTIAL đứng một mình (Bước 4 tài liệu); chỉ
+# nâng RESTRICTED khi kết hợp với FIN_ACCOUNT (compound rule "Location
+# Tracking + Financial = SECRET" trong rules.yaml — tín hiệu chống gian lận
+# tài chính kết hợp định vị theo domain tài chính-ngân hàng).
+#
+# CHƯA VALIDATE trên dữ liệu thật — hr/healthcare/finance_banking hiện
+# không có ví dụ location tracking trong dataset gendata; viết thận trọng
+# theo bảng từ khóa tài liệu, cần review lại khi có dữ liệu thật xuất hiện
+# flag này.
+
+id: location_tracking_001
+name: "PII-011 Dữ liệu vị trí / định vị / lịch sử di chuyển"
+category: pii
+level: CONFIDENTIAL
+weight: 0.85
+priority: 63
+tags: [pii, location_tracking, geolocation, ndctn13]
+enabled: true
+
+patterns:
+  # Cặp tọa độ thập phân (lat,long) — 4-8 chữ số thập phân để tránh khớp
+  # nhầm số liệu tài chính/tỷ lệ ngẫu nhiên. Cần context (GPS/định vị gần đó).
+  - regex: '\b[-+]?\d{1,2}\.\d{4,8}\s*,\s*[-+]?\d{1,3}\.\d{4,8}\b'
+    description: "Cặp tọa độ GPS dạng thập phân (lat,long)"
+    confidence: 0.75
+    context_required: true
+
+  # Nhãn tọa độ rõ ràng — "Tọa độ GPS: 21.028511, 105.804817"
+  - regex: '(?i)(?:tọa\s*độ\s*GPS|GPS\s*coordinates?|vĩ\s*độ|kinh\s*độ|latitude|longitude)\s*[:=]'
+    description: "Nhãn tọa độ GPS/vĩ độ/kinh độ"
+    confidence: 0.90
+    context_required: false
+
+  # Cụm từ mô tả dữ liệu theo dõi vị trí/lịch sử di chuyển
+  - regex: '(?i)(?:lịch\s*sử\s*di\s*chuyển|dữ\s*liệu\s*định\s*vị|theo\s*dõi\s*vị\s*trí|location\s*tracking|movement\s*history|geolocation\s*data)'
+    description: "Cụm từ lịch sử di chuyển/dữ liệu định vị/theo dõi vị trí"
+    confidence: 0.85
+    context_required: false
+
+  # Cụm từ phụ trợ — cần context vì "IP address"/"check-in" khá chung chung
+  - regex: '(?i)(?:địa\s*chỉ\s*IP\s*và\s*vị\s*trí|cell\s*tower|GPS\s*log|check-?in\s*location)'
+    description: "Cụm từ phụ trợ liên quan định vị (IP+vị trí, cell tower, GPS log)"
+    confidence: 0.75
+    context_required: true
+
+keywords:
+  primary:
+    - "tọa độ GPS"
+    - "định vị"
+    - "vị trí"
+    - "theo dõi vị trí"
+    - "lịch sử di chuyển"
+    - "geolocation"
+    - "latitude"
+    - "longitude"
+  secondary:
+    - "bản đồ"
+    - "map"
+    - "cell tower"
+    - "IP address"
+    - "di chuyển"
+    - "hành trình"
+
+false_positive_reduction:
+  min_context_window: 150
+  exclude_if_no_keywords: true
+
+# Không level_gate, không volume_escalation — flag CONFIDENTIAL độc lập
+# theo Bước 4 tài liệu, chỉ leo thang qua compound rule (xem ghi chú đầu file).

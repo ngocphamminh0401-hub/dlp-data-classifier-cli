@@ -237,13 +237,14 @@ func runScanWithPaths(opts *cliOptions, paths <-chan string, totalHint int, out 
 		return 0, fmt.Errorf("unsupported output format: %s", format)
 	}
 
-	minLevel, err := parseLevel(pickString(opts.levelFilter, "INTERNAL", "INTERNAL"))
+	minLevel, err := parseLevel(pickString(opts.levelFilter, "PUBLIC", "PUBLIC"))
 	if err != nil {
 		return 0, err
 	}
 
 	sc := scanner.New(cfg)
 	ctx := context.Background()
+	wallStart := time.Now()
 	sc.ScanPaths(ctx, paths)
 
 	showProgress := !(format == "text" && out == os.Stdout)
@@ -343,13 +344,18 @@ func runScanWithPaths(opts *cliOptions, paths <-chan string, totalHint int, out 
 		}
 	}
 
+	wallElapsed := time.Since(wallStart)
 	fmt.Fprintf(os.Stderr, "Scanned files: %d\n", count)
 	if format == "text" {
-		fmt.Fprintln(out, "Summary")
-		fmt.Fprintf(out, "  PUBLIC: %d\n", levelCounts["PUBLIC"])
-		fmt.Fprintf(out, "  INTERNAL: %d\n", levelCounts["INTERNAL"])
+		fmt.Fprintln(out, "\nSummary")
+		fmt.Fprintf(out, "  PUBLIC:       %d\n", levelCounts["PUBLIC"])
+		fmt.Fprintf(out, "  INTERNAL:     %d\n", levelCounts["INTERNAL"])
 		fmt.Fprintf(out, "  CONFIDENTIAL: %d\n", levelCounts["CONFIDENTIAL"])
-		fmt.Fprintf(out, "  RESTRICTED: %d\n", levelCounts["RESTRICTED"])
+		fmt.Fprintf(out, "  RESTRICTED:   %d\n", levelCounts["RESTRICTED"])
+		fmt.Fprintf(out, "  Thời gian:    %s\n", wallElapsed.Round(time.Millisecond))
+		if count > 0 {
+			fmt.Fprintf(out, "  Throughput:   %.1f files/s\n", float64(count)/wallElapsed.Seconds())
+		}
 	}
 	return count, nil
 }

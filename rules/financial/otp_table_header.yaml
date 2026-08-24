@@ -1,0 +1,53 @@
+# FIN-010 — Bảng có cột "Số thẻ / CVV / OTP" (AUTH_SECRET — bằng chứng gián tiếp)
+# Tách riêng khỏi otp_auth_001 vì đây là bằng chứng YẾU HƠN: chỉ phát hiện
+# TÊN CỘT trong header bảng (VD: "Số thẻ  CVV  OTP  Số dư"), không phải giá
+# trị OTP/CVV thật — khác otp_auth_001 luôn bắt được value cụ thể nên không
+# cần gate. Trường hợp cần rule này: báo cáo/danh sách khách hàng dạng bảng
+# dày đặc cột, nơi PDF text-layer bẻ dòng giữa các nhóm số của cùng 1 cột
+# (Số thẻ 16 số bị tách làm 3-4 dòng do cột hẹp) khiến regex value-based của
+# otp_auth_001 không với tới được — nhưng tên cột vẫn đứng liền nhau trên
+# cùng 1 dòng header nên vẫn phát hiện được cấu trúc bảng chứa dữ liệu thật.
+#
+# Rủi ro FP: tài liệu hướng dẫn liệt kê tên trường mẫu (không phải bảng dữ
+# liệu thật) có thể vô tình liệt 3 từ này liền nhau. Vì vậy BẮT BUỘC gate:
+# cần ≥2 lần khớp hoặc có rule khác ở mức ≥ CONFIDENTIAL trong cùng chunk
+# (thực tế: các báo cáo dạng này luôn có tên khách hàng/CCCD đi kèm).
+
+id: otp_table_header_001
+name: "FIN-010 Header bảng Số thẻ/CVV/OTP"
+category: financial
+level: SECRET
+weight: 0.90
+priority: 91
+tags: [financial, auth_secret, otp, table_header]
+enabled: true
+
+patterns:
+  # "Số thẻ  CVV  OTP" — thứ tự cột cố định trong mẫu báo cáo ngân hàng.
+  # KHÔNG dùng \b sau "thẻ": \b trong Go regexp/RE2 chỉ nhận ranh giới từ
+  # ASCII, "ẻ" (có dấu) không phải word char theo \b nên \b không bao giờ
+  # khớp ngay sau "thẻ" (đã kiểm chứng trực tiếp — nguyên nhân rule này im
+  # lặng không match lần đầu). Dùng \s bắt buộc thay cho \b để vừa đúng
+  # ranh giới vừa không phụ thuộc ASCII.
+  - regex: '(?i)số\s*thẻ\s[^\n]{0,14}\bCVV\b[^\n]{0,15}\bOTP\b'
+    description: "FIN-010a Header cột Số thẻ + CVV + OTP"
+    confidence: 0.85
+    context_required: false
+
+keywords:
+  primary:
+    - "Số thẻ"
+    - "CVV"
+    - "OTP"
+  secondary:
+    - "Số dư"
+    - "danh sách khách hàng"
+    - "báo cáo"
+
+level_gate:
+  require_corroboration: true
+  fallback_level: CONFIDENTIAL
+
+false_positive_reduction:
+  min_context_window: 40
+  exclude_if_no_keywords: false

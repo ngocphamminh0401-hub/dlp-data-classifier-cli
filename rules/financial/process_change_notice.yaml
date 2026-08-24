@@ -1,0 +1,80 @@
+# FIN-018 — Thông báo thay đổi quy trình nghiệp vụ nội bộ (v2 — mở rộng)
+# Đặc trưng: email/văn bản dạng "Trước đây / Thay đổi thành", gửi từ phòng
+# nghiệp vụ (Vận hành, Quản lý Giao dịch...) đến chi nhánh/PGD toàn hệ
+# thống, công bố thay đổi quy trình xử lý giao dịch. KHÔNG chứa dữ liệu
+# khách hàng, số tài khoản hay số liệu tài chính cụ thể — thuần túy là
+# thông tin vận hành nội bộ.
+#
+# Mở rộng sau khi quan sát thêm biến thể: có văn bản dạng số hiệu chính
+# thức (vd "06/TĐQLGD/2024") thay vì email thường, và tên phòng ban phát
+# hành đa dạng hơn (Phòng Vận hành / Phòng Nghiệp vụ Giao dịch / Phòng
+# Quản lý Giao dịch / Ban Vận hành...). Bản chất không đổi: thông báo thay
+# đổi cách xử lý giao dịch nội bộ, không có dữ liệu KH cụ thể.
+#
+# LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns
+# — đã BỎ vì FPReduction trong engine (internal/engine/rules.go) chỉ có 4
+# field cố định (min_context_window, exclude_if_no_keywords, luhn_required,
+# cvv_expiry_boost), không có exclude_patterns; field lạ bị âm thầm bỏ qua
+# chứ không lỗi. Rủi ro thấp vì rule này chỉ INTERNAL (thấp) — nếu chunk có
+# số TK/dữ liệu thật, "highest-sensitivity-wins" của engine tự lấy mức cao
+# hơn từ rule PII/financial khác, không cần loại trừ tường minh.
+
+id: fin_process_change_notice_001
+name: "FIN-018 Thông báo thay đổi quy trình nghiệp vụ nội bộ"
+category: financial
+level: INTERNAL
+weight: 0.35
+priority: 35
+tags: [financial, internal_process, operations]
+enabled: true
+
+patterns:
+  - regex: '(?i)th[ôo]ng\s*b[áa]o\s*thay\s*đ[ổo]i\s*quy\s*tr[ìi]nh'
+    description: "FIN-018a Tiêu đề thông báo thay đổi quy trình"
+    confidence: 0.85
+    context_required: false
+
+  # Bảng so sánh "Trước đây / Thay đổi thành" — đặc trưng định dạng thông
+  # báo quy trình mới
+  - regex: '(?i)tr[ưu][ớo]c\s*đ[âa]y\s*(?:\|)?\s*thay\s*đ[ổo]i\s*th[àa]nh'
+    description: "FIN-018b Bảng so sánh quy trình cũ/mới"
+    confidence: 0.80
+    context_required: false
+
+  - regex: '(?i)[áa]p\s*d[ụu]ng\s*ch[íi]nh\s*th[ứu]c\s*(?:t[ừu]|k[ểe]\s*t[ừu])\s*ng[àa]y'
+    description: "FIN-018c Ngày áp dụng quy trình mới"
+    confidence: 0.60
+    context_required: true
+
+  # MỚI: số hiệu văn bản nội bộ dạng "06/TĐQLGD/2024", "16/VH-2024"
+  - regex: '\b\d{1,4}\s*/\s*[A-ZĐ]{2,8}[\s\-/]?\d{4}\b'
+    description: "FIN-018d Số hiệu văn bản nội bộ (thông báo/quy trình)"
+    confidence: 0.55
+    context_required: true
+
+keywords:
+  primary:
+    - "thay đổi quy trình"
+    - "chi nhánh, phòng giao dịch"
+    - "phòng vận hành"
+    - "phòng quản lý giao dịch"
+    - "phòng nghiệp vụ giao dịch"
+    - "ban vận hành"
+    - "ban nghiệp vụ"
+  secondary:
+    - "hệ thống điện tử"
+    - "phê duyệt"
+    - "lưu hồ sơ"
+    - "văn bản hướng dẫn chi tiết"
+    - "quy trình số"
+    - "số hiệu thông báo"
+    - "khối vận hành"
+    - "khối kiểm soát rủi ro"
+
+level_gate:
+  require_corroboration: false
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

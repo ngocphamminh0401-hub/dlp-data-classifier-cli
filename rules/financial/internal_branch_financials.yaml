@@ -1,0 +1,63 @@
+# FIN-020 — Trao đổi nội bộ số liệu kinh doanh chi nhánh (chưa kiểm toán,
+# dạng tổng hợp)
+# Đặc trưng: chat nội bộ giữa nhân sự Phòng Tài chính Kế toán, chia sẻ BẢNG
+# TỔNG HỢP doanh thu/lợi nhuận/chi phí theo chi nhánh, có kèm cảnh báo bảo
+# mật rõ ràng ("không chia sẻ ra ngoài", "chưa kiểm toán"). Xếp INTERNAL vì
+# đây là số liệu tài chính DOANH NGHIỆP tổng hợp theo chi nhánh — không
+# phải dữ liệu định danh cá nhân/khách hàng (khác FIN-011/FIN-015). Tuy
+# nhiên cảnh báo bảo mật đi kèm là dấu hiệu nội dung nhạy cảm ở mức doanh
+# nghiệp (thông tin tài chính chưa công bố), cần theo dõi nếu sau này phát
+# hiện số liệu tương tự ở board-level/toàn hàng thì nên tách rule riêng
+# CONFIDENTIAL.
+
+id: fin_internal_branch_financials_001
+name: "FIN-020 Trao đổi nội bộ số liệu kinh doanh chi nhánh chưa kiểm toán"
+category: financial
+level: INTERNAL
+weight: 0.45
+priority: 45
+tags: [financial, internal_process, corporate_financials]
+enabled: true
+
+patterns:
+  # Bảng số liệu theo chi nhánh với đơn vị tỷ đồng/VNĐ
+  - regex: '(?i)(?:doanh\s*thu|l[ợo]i\s*nhu[ậa]n|chi\s*ph[íi])\s*.{0,20}(?:t[ỷy]\s*(?:đ[ồo]ng|VN[ĐD])|chi\s*nh[áa]nh)'
+    description: "FIN-020a Số liệu doanh thu/lợi nhuận/chi phí theo chi nhánh"
+    confidence: 0.75
+    context_required: false
+
+  # Cảnh báo bảo mật/chưa kiểm toán đi kèm số liệu nội bộ
+  - regex: '(?i)ch[ưu]a\s*ki[ểe]m\s*to[áa]n|kh[ôo]ng\s*chia\s*s[ẻe]\s*ra\s*ngo[àa]i|đ[ừu]ng\s*g[ửu]i\s*qua\s*email'
+    description: "FIN-020b Cảnh báo bảo mật/dữ liệu chưa kiểm toán"
+    confidence: 0.70
+    context_required: true
+
+  - regex: '(?i)ph[òo]ng\s*t[àa]i\s*ch[íi]nh\s*k[ếe]\s*to[áa]n'
+    description: "FIN-020c Phòng Tài chính Kế toán"
+    confidence: 0.50
+    context_required: true
+
+keywords:
+  primary:
+    - "số liệu kinh doanh"
+    - "tổng doanh thu"
+    - "lợi nhuận trước thuế"
+    - "chi nhánh"
+    - "chưa kiểm toán"
+  secondary:
+    - "trình ban lãnh đạo"
+    - "bảo mật thông tin"
+    - "trao đổi nội bộ"
+    - "dự phòng rủi ro tín dụng"
+
+# Cần corroboration: chỉ nhắc "doanh thu"/"lợi nhuận" đơn lẻ (vd trong báo
+# cáo công khai đã kiểm toán, thông cáo báo chí) không nên vào rule này.
+# Phải có TỔ HỢP bảng số liệu theo chi nhánh + tín hiệu nội bộ/bảo mật
+# (020b hoặc 020c) trong cùng chunk.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: false

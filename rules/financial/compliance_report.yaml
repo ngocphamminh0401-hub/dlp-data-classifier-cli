@@ -1,0 +1,65 @@
+# FIN-016 — Báo cáo tuân thủ/giám sát gửi cơ quan quản lý (không có dữ liệu
+# khách hàng cụ thể)
+# Đặc trưng: văn bản gửi/từ NHNN hoặc bộ phận tuân thủ, mang tính tổng hợp
+# kết quả kiểm tra (đạt/không đạt, số liệu tổng quát theo STT/hạng mục),
+# KHÔNG có tên khách hàng, số tài khoản, hay số tiền giao dịch cụ thể.
+# Mức INTERNAL vì đây là hoạt động nghiệp vụ thường quy, không phải dữ liệu
+# nhạy cảm cá nhân — nhưng vẫn không nên public vì phản ánh cơ chế kiểm
+# soát nội bộ của ngân hàng.
+#
+# LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns để
+# nhường cho rule mức cao hơn khi có số TK/dư nợ cụ thể — đã BỎ vì
+# FPReduction trong engine (internal/engine/rules.go) chỉ có 4 field:
+# min_context_window, exclude_if_no_keywords, luhn_required,
+# cvv_expiry_boost — không có exclude_patterns. YAML không lỗi (unknown
+# field bị bỏ qua âm thầm) nhưng field đó KHÔNG có tác dụng nếu giữ lại.
+# Không cần lo ngại nhiều: rule này chỉ INTERNAL (thấp), nên dù có lỡ khớp
+# cùng đoạn văn bản với 1 rule CONFIDENTIAL/SECRET khác, "highest-sensitivity
+# -wins" của engine vẫn tự động lấy mức cao hơn — không cần cơ chế loại trừ
+# tường minh để tránh bị gắn NHẦM THẤP.
+
+id: fin_compliance_report_001
+name: "FIN-016 Báo cáo tuân thủ/giám sát định kỳ (không kèm PII/giao dịch cụ thể)"
+category: financial
+level: INTERNAL
+weight: 0.40
+priority: 40
+tags: [financial, compliance, regulatory_report]
+enabled: true
+
+patterns:
+  - regex: '(?i)b[áa]o\s*c[áa]o\s*(?:t[ìi]nh\s*h[ìi]nh\s*)?tu[âa]n\s*th[ủu]'
+    description: "FIN-016a Tiêu đề báo cáo tuân thủ"
+    confidence: 0.75
+    context_required: false
+
+  - regex: '(?i)ng[âa]n\s*h[àa]ng\s*nh[àa]\s*n[ưu][ớo]c|NHNN'
+    description: "FIN-016b Nhắc đến Ngân hàng Nhà nước / cơ quan giám sát"
+    confidence: 0.55
+    context_required: true
+
+  - regex: '(?i)(?:ph[òo]ng|b[ộo]\s*ph[ậa]n)\s*tu[âa]n\s*th[ủu]\s*n[ộo]i\s*b[ộo]'
+    description: "FIN-016c Bộ phận tuân thủ nội bộ"
+    confidence: 0.55
+    context_required: true
+
+keywords:
+  primary:
+    - "báo cáo tuân thủ"
+    - "kiểm tra nội bộ"
+    - "phòng quản lý giám sát"
+    - "ngân hàng nhà nước"
+  secondary:
+    - "phòng chống rửa tiền"
+    - "kiểm soát nội bộ"
+    - "đạt yêu cầu"
+    - "hậu kiểm định kỳ"
+    - "báo cáo giao dịch đáng ngờ"
+
+level_gate:
+  require_corroboration: false
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true

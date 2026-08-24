@@ -1,0 +1,82 @@
+# FIN-017 — Tài liệu/hướng dẫn quy trình nghiệp vụ nội bộ (v2 — mở rộng)
+# Đặc trưng: gửi từ bộ phận đào tạo/nhân sự đến nhân viên (thường là "nhân
+# viên mới"), mô tả CÁCH THỰC HIỆN quy trình (hướng dẫn thao tác) chứ không
+# chứa dữ liệu giao dịch/khách hàng thực tế nào. Mức INTERNAL vì là tài
+# liệu vận hành nội bộ, không nhạy cảm cao nhưng không nên công khai ra
+# ngoài tổ chức (lộ quy trình nghiệp vụ/bảo mật nội bộ).
+#
+# Mở rộng để bắt thêm dạng "BẢNG HƯỚNG DẪN QUY TRÌNH" theo cấu trúc
+# Bước/Mô tả công việc/Công cụ-Hệ thống/Lưu ý — không chỉ dạng email đào
+# tạo. Cả hai dạng đều là hướng dẫn thao tác, không chứa dữ liệu KH thật.
+#
+# LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns để
+# nhường cho rule mức cao hơn (FIN-013/015) khi tài liệu đào tạo lỡ dùng dữ
+# liệu thật — đã BỎ vì FPReduction trong engine (internal/engine/rules.go)
+# chỉ có 4 field: min_context_window, exclude_if_no_keywords,
+# luhn_required, cvv_expiry_boost — không có exclude_patterns. YAML không
+# lỗi (unknown field bị bỏ qua âm thầm) nhưng field đó KHÔNG có tác dụng
+# nếu giữ lại. Không cần lo ngại nhiều: rule này chỉ INTERNAL (thấp), nên
+# dù lỡ khớp cùng đoạn văn bản có dữ liệu thật, "highest-sensitivity-wins"
+# của engine vẫn tự động lấy mức cao hơn từ rule PII/financial khác — không
+# cần cơ chế loại trừ tường minh để tránh gắn NHẦM THẤP.
+
+id: fin_internal_training_guide_001
+name: "FIN-017 Tài liệu đào tạo/hướng dẫn quy trình nghiệp vụ nội bộ"
+category: financial
+level: INTERNAL
+weight: 0.35
+priority: 35
+tags: [financial, training, internal_procedure]
+enabled: true
+
+patterns:
+  - regex: '(?i)h[ưu][ớo]ng\s*d[ẫa]n\s*quy\s*tr[ìi]nh\s*(?:giao\s*d[ịi]ch|nghi[ệe]p\s*v[ụu])'
+    description: "FIN-017a Tiêu đề hướng dẫn quy trình giao dịch/nghiệp vụ"
+    confidence: 0.80
+    context_required: false
+
+  - regex: '(?i)(?:ph[òo]ng|chuy[êe]n\s*vi[êe]n)\s*đ[àa]o\s*t[ạa]o'
+    description: "FIN-017b Nhắc đến phòng/chuyên viên đào tạo"
+    confidence: 0.60
+    context_required: true
+
+  - regex: '(?i)giao\s*d[ịi]ch\s*vi[êe]n\s*m[ớo]i|nh[âa]n\s*s[ựu]\s*m[ớo]i|nh[âa]n\s*vi[êe]n\s*m[ớo]i'
+    description: "FIN-017c Đối tượng nhân viên/giao dịch viên mới"
+    confidence: 0.55
+    context_required: true
+
+  # MỚI: bảng hướng dẫn dạng Bước/Mô tả công việc — cấu trúc quy trình quầy
+  - regex: '(?i)b[ưu][ớo]c\s*\d+\s*.{0,60}(?:m[ôo]\s*t[ảa]\s*c[ôo]ng\s*vi[ệe]c|đ[óo]n\s*ti[ếe]p|ki[ểe]m\s*tra\s*gi[ấa]y\s*t[ờo])'
+    description: "FIN-017d Bảng hướng dẫn quy trình dạng Bước-Mô tả"
+    confidence: 0.70
+    context_required: false
+
+  - regex: '(?i)b[ảa]ng\s*h[ưu][ớo]ng\s*d[ẫa]n\s*quy\s*tr[ìi]nh'
+    description: "FIN-017e Tiêu đề bảng hướng dẫn quy trình"
+    confidence: 0.80
+    context_required: false
+
+keywords:
+  primary:
+    - "hướng dẫn quy trình"
+    - "giao dịch viên mới"
+    - "phòng đào tạo"
+    - "quy trình nghiệp vụ"
+    - "bảng hướng dẫn quy trình"
+    - "trung tâm đào tạo"
+  secondary:
+    - "xác thực chứng từ"
+    - "cách kiểm tra"
+    - "quy định về bảo mật thông tin"
+    - "tài liệu đính kèm"
+    - "đón tiếp khách hàng"
+    - "corebanking"
+    - "nghiêm cấm tiết lộ thông tin khách hàng"
+
+level_gate:
+  require_corroboration: false
+  fallback_level: INTERNAL
+
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true
