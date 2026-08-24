@@ -73,3 +73,11 @@ false_positive_reduction:
   min_context_window: 100
   exclude_if_no_keywords: false
   # Pattern đã nhúng label → không cần keyword riêng cho 2 pattern đầu
+
+# Hệ số discount thấp hơn credentials (0.4 vs 0.5): CVV thật ngẫu nhiên hiếm
+# khi trùng dãy lặp/tuần tự, nên các giá trị blocklist gần như chắc chắn là
+# ví dụ minh họa.
+placeholder_exclusion:
+  value_blocklist_patterns: ["^(000|123|111|999|0000|1234|9999)$"]
+  doc_context_discount_keywords: [hướng dẫn, ví dụ, là gì, khái niệm, training, tutorial]
+  doc_context_discount_factor: 0.4

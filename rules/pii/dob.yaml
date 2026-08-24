@@ -11,7 +11,7 @@ category: pii
 level: INTERNAL
 weight: 0.72
 priority: 35
-tags: [pii, date_of_birth, pii_dob, temporal]
+tags: [pii, date_of_birth, pii_dob, temporal, personal_identifier]
 enabled: true
 
 patterns:
@@ -28,10 +28,16 @@ patterns:
     context_required: true
 
   # MM/DD/YYYY — định dạng Mỹ (thường gặp trong tài liệu quốc tế)
+  # FP cao: định dạng ngày cực phổ biến trong hợp đồng/biên bản họp/deadline
+  # dự án. exclude_if_no_keywords (chunk-wide) không đủ chặt — 1 dòng "Ngày
+  # sinh:" ở đầu tài liệu khiến MỌI ngày MM/DD/YYYY khác trong toàn chunk
+  # (deadline, ngày họp...) cũng thành match. require_keyword_within=40 buộc
+  # keyword PRIMARY (ngày sinh/DOB/sinh ngày) phải ở NGAY GẦN match cụ thể.
   - regex: '\b(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])[-/]\d{4}\b'
     description: "MM/DD/YYYY (định dạng Mỹ)"
     confidence: 0.60
     context_required: true
+    require_keyword_within: 40
 
   # Ngày sinh dạng chữ: 15 tháng 03 năm 1990
   - regex: '\b(?:0?[1-9]|[12]\d|3[01])\s+tháng\s+(?:0?[1-9]|1[0-2])\s+năm\s+(?:19|20)\d{2}\b'
@@ -39,11 +45,17 @@ patterns:
     confidence: 0.88
     context_required: false
 
-  # Năm sinh riêng biệt kết hợp keyword — low confidence, hỗ trợ compound
+  # Năm sinh riêng biệt kết hợp keyword — low confidence, hỗ trợ compound.
+  # FP cao nhất trong rule: 1 năm 4 chữ số (1900-2029) xuất hiện ở khắp nơi
+  # trong hợp đồng/biên bản họp/deadline dự án. Hạ xuống vai trò "hỗ trợ":
+  # chỉ tính khi keyword PRIMARY (ngày sinh/DOB/sinh ngày) nằm NGAY GẦN
+  # (require_keyword_within=40 byte, ~1 câu) — không chỉ có mặt đâu đó trong
+  # min_context_window=150 (rule-wide) hay cùng chunk như trước.
   - regex: '\b(?:19[0-9]{2}|20[0-2]\d)\b'
-    description: "Năm sinh (1900-2029) — chỉ dùng với keyword ngữ cảnh"
+    description: "Năm sinh (1900-2029) — chỉ dùng với keyword ngữ cảnh ngay gần"
     confidence: 0.45
     context_required: true
+    require_keyword_within: 40
 
 keywords:
   primary:

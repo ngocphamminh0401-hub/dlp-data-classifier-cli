@@ -9,7 +9,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.75
 priority: 75
-tags: [financial, bank_account, statement, pii]
+tags: [financial, bank_account, statement, pii, financial_personal]
 enabled: true
 
 patterns:

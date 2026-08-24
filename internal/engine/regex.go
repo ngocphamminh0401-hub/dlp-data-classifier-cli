@@ -9,24 +9,29 @@
 //  2. Với mỗi regex match:
 //     a. Tính base score: pattern.Confidence × rule.Weight
 //     b. Distance-weighted context boost — 3 vùng khoảng cách:
-//        ┌──────────────────────────────────────────────────────────────────┐
-//        │  Zone 1: khoảng cách 0–20 byte  → primary +0.15 / secondary +0.07│
-//        │  Zone 2: khoảng cách 21–50 byte → primary +0.10 / secondary +0.05│
-//        │  Zone 3: khoảng cách 51–window  → primary +0.05 / secondary +0.02│
-//        │  Ngoài window: không boost (keyword không liên quan)             │
-//        │  Tổng boost tối đa: +0.30 (capped)                              │
-//        └──────────────────────────────────────────────────────────────────┘
-//        Tại sao distance-weighted?
-//        "visa" ngay trước "4532015112830366" xác nhận mạnh hơn "visa" cách 180 byte.
-//        Từ xa → ngữ cảnh yếu hơn → boost thấp hơn.
+//     ┌──────────────────────────────────────────────────────────────────┐
+//     │  Zone 1: khoảng cách 0–20 byte  → primary +0.15 / secondary +0.07│
+//     │  Zone 2: khoảng cách 21–50 byte → primary +0.10 / secondary +0.05│
+//     │  Zone 3: khoảng cách 51–window  → primary +0.05 / secondary +0.02│
+//     │  Ngoài window: không boost (keyword không liên quan)             │
+//     │  Tổng boost tối đa: +0.30 (capped)                              │
+//     └──────────────────────────────────────────────────────────────────┘
+//     Tại sao distance-weighted?
+//     "visa" ngay trước "4532015112830366" xác nhận mạnh hơn "visa" cách 180 byte.
+//     Từ xa → ngữ cảnh yếu hơn → boost thấp hơn.
 //     c. Validators (Luhn, ...):
-//        - Pass → confidence = max(confidence, 0.99)  [validator confirms match]
-//        - Fail → bỏ qua match hoàn toàn             [hard reject FP]
+//     - Pass → confidence = max(confidence, 0.99)  [validator confirms match]
+//     - Fail → bỏ qua match hoàn toàn             [hard reject FP]
+//     c.5. Placeholder exclusion (hard reject): value khớp value_blocklist_patterns
+//     hoặc known_test_values → bỏ qua match hoàn toàn
 //     d. FP reduction: ExcludeIfNoKeywords + CVV/expiry boost
+//     d.5. Placeholder exclusion (soft discount): chunk có doc_context_discount_keywords
+//     → confidence *= doc_context_discount_factor
 //     e. Nếu confidence < minConfidence → bỏ qua
 //     f. Xác định cấp độ (override_level hoặc rule.ParsedLevel)
 //     g. Kiểm tra escalation keywords → nâng cấp nếu cần
-//     h. Thêm vào kết quả
+//     h. Negation filter: từ phủ định gần match → hạ ngay về level_gate.fallback
+//     i. Thêm vào kết quả
 //
 // # Confidence formula
 //
@@ -71,6 +76,14 @@ var (
 func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, opts matchOpts) []RuleMatch {
 	var out []RuleMatch
 
+	// placeholder_exclusion.doc_context_discount: tính 1 LẦN cho cả chunk (không
+	// phải mỗi match) — tránh lowercase lại toàn bộ chunk hàng nghìn lần trong
+	// hot path. Chỉ tốn chi phí này cho các rule THỰC SỰ khai báo cơ chế này.
+	docContextDiscount := false
+	if rule.PlaceholderExclusion.DocContextDiscountFactor > 0 && len(rule.PlaceholderExclusion.DocContextDiscountKeywords) > 0 {
+		docContextDiscount = containsAnyKeyword(chunk, rule.PlaceholderExclusion.DocContextDiscountKeywords)
+	}
+
 	for patIdx := range rule.Patterns {
 		pat := &rule.Patterns[patIdx]
 		if pat.Compiled == nil {
@@ -102,6 +115,13 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				continue
 			}
 
+			// RequireKeywordWithin: siết chặt context_required xuống mức TỪNG
+			// MATCH — khác hits.HasRule (chunk-wide) ở trên, đòi keyword PRIMARY
+			// phải THỰC SỰ gần match này, không chỉ có mặt đâu đó trong chunk.
+			if pat.RequireKeywordWithin > 0 && !hasPrimaryKeywordWithin(hits, rule.ID, start, end, pat.RequireKeywordWithin) {
+				continue
+			}
+
 			// ── 1. Base score ─────────────────────────────────────────────
 			score := pat.Confidence * rule.Weight
 
@@ -129,6 +149,35 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				}
 			}
 
+			// ── 3.5 Placeholder exclusion: hard reject ────────────────────
+			// Chạy SAU validators (đáp ứng yêu cầu known_test_values "so khớp
+			// SAU khi đã qua luhn_required" — match nào fail Luhn đã bị loại ở
+			// bước 3, chỉ còn match hợp lệ Luhn tới đây).
+			pe := &rule.PlaceholderExclusion
+			if len(pe.CompiledBlocklist) > 0 {
+				var val []byte
+				if pe.ValueBlocklistFullMatch {
+					val = bytes.TrimSpace(matchBytes)
+				} else {
+					val = extractMatchValue(matchBytes)
+				}
+				blocked := false
+				for _, re := range pe.CompiledBlocklist {
+					if re.Match(val) {
+						blocked = true
+						break
+					}
+				}
+				if blocked {
+					continue // giá trị placeholder đã biết (changeme, 123456, <...>...)
+				}
+			}
+			if len(pe.NormalizedTestValues) > 0 {
+				if _, isTestValue := pe.NormalizedTestValues[string(digitsOnly(matchBytes))]; isTestValue {
+					continue // số thẻ test công khai của cổng thanh toán (Stripe, VNPay...)
+				}
+			}
+
 			// ── 4. FP reduction: exclude_if_no_keywords ───────────────────
 			// Cho các loại dữ liệu như số CMND/CCCD, số tài khoản — cần có keyword
 			// đi kèm để phân biệt với số serial, mã sản phẩm, ...
@@ -144,6 +193,14 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				if cvvPattern.Match(window) && expiryPattern.Match(window) {
 					score = clamp01(score + rule.FPReduction.CVVExpiryBoost)
 				}
+			}
+
+			// ── 5.5 Placeholder exclusion: doc context discount ───────────
+			// Chunk có từ khóa "hướng dẫn"/"ví dụ"/"SOP"/"template"... → giảm
+			// (KHÔNG loại hẳn) confidence — match vẫn có thể qua ngưỡng nếu
+			// vốn đã rất cao.
+			if docContextDiscount {
+				score = clamp01(score * rule.PlaceholderExclusion.DocContextDiscountFactor)
 			}
 
 			// ── 6. Ngưỡng confidence ─────────────────────────────────────
@@ -167,6 +224,22 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				level = checkEscalation(chunk, loc[0], loc[1], rule, level)
 			}
 
+			// ── 8.5 Negation filter ────────────────────────────────────────
+			// Từ/cụm phủ định (VD "không phải tài liệu nội bộ", "this email")
+			// xuất hiện gần match → xử lý NGAY theo Action, bất kể corroboration
+			// khác — bằng chứng phủ định trực tiếp mạnh hơn nên không cần chờ
+			// Step 4.5 (applyLevelGate) đánh giá lại. AppliesToPatterns rỗng =
+			// áp dụng cho pattern này; nếu có danh sách, chỉ áp dụng khi pattern
+			// hiện tại (patIdx, 1-indexed "pattern_N") có trong danh sách.
+			if len(rule.NegationFilter.TriggerWords) > 0 &&
+				negationAppliesToPattern(rule.NegationFilter.AppliesToPatterns, patIdx) &&
+				negationTriggered(chunk, loc[0], loc[1], rule.NegationFilter.WindowChars, rule.NegationFilter.TriggerWords) {
+				if rule.NegationFilter.Action == "suppress" {
+					continue // loại bỏ match hoàn toàn — không góp phần vào bất kỳ level nào
+				}
+				level = rule.LevelGate.ParsedFallbackLevel // "downgrade_to_gate"
+			}
+
 			// ── 9. Preview (masked) ───────────────────────────────────────
 			preview := maskPreview(matchBytes)
 
@@ -186,6 +259,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				Value:       string(matchBytes),
 				PatternDesc: pat.Description,
 				Validated:   validated,
+				PatternIdx:  patIdx,
 			})
 		}
 	}
@@ -224,6 +298,22 @@ var contextZones = []ContextZone{
 
 // maxTotalBoost là tổng boost tối đa từ keyword context, dù có bao nhiêu keyword.
 const maxTotalBoost = 0.30
+
+// hasPrimaryKeywordWithin kiểm tra có keyword PRIMARY nào của ruleID nằm
+// trong khoảng windowChars quanh match [matchStart, matchEnd) không — dùng
+// cho RulePattern.RequireKeywordWithin (siết chặt context_required xuống mức
+// từng match, thay vì chunk-wide như hits.HasRule).
+func hasPrimaryKeywordWithin(hits HitMap, ruleID string, matchStart, matchEnd int64, windowChars int) bool {
+	for _, hit := range hits[ruleID] {
+		if !hit.Primary {
+			continue
+		}
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) <= windowChars {
+			return true
+		}
+	}
+	return false
+}
 
 // distanceWeightedBoost tính tổng boost dựa trên khoảng cách keyword đến match.
 //
@@ -800,22 +890,6 @@ func shouldSkipPostFilter(chunk []byte, start, end int, ruleID string, match []b
 				return true
 			}
 		}
-	case "email_001":
-		// System/department emails in public documents are not personal data.
-		systemPrefixes := []string{
-			"noreply@", "no-reply@", "donotreply@", "do-not-reply@", "mailer-daemon@", "bounce@",
-			"info@", "contact@", "support@", "help@", "admin@", "administrator@",
-			"hotline@", "cskh@", "dichvu@", "dịchvụ@", "thongbao@", "thông-bao@",
-			"newsletter@", "marketing@", "sales@", "pr@", "media@",
-			"webmaster@", "postmaster@", "unsubscribe@", "listserv@",
-			"announce@", "notification@", "alert@", "system@", "robot@", "bot@",
-			"no.reply@", "do.not.reply@",
-		}
-		for _, prefix := range systemPrefixes {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
 	}
 
 	_ = end
@@ -842,6 +916,76 @@ func isCommentedLine(chunk []byte, start int) bool {
 	lineStart := bytes.LastIndexByte(chunk[:start], '\n') + 1
 	prefix := strings.TrimSpace(string(chunk[lineStart:start]))
 	return strings.HasPrefix(prefix, "#") || strings.HasPrefix(prefix, "//") || strings.HasPrefix(prefix, ";")
+}
+
+// ─── Placeholder exclusion ──────────────────────────────────────────────────
+
+// containsAnyKeyword kiểm tra có bất kỳ keyword nào (case-insensitive) xuất
+// hiện trong chunk không. Dùng cho placeholder_exclusion.doc_context_discount
+// — gọi 1 LẦN mỗi rule/chunk (không phải mỗi match) vì phải lowercase cả chunk.
+func containsAnyKeyword(chunk []byte, keywords []string) bool {
+	lower := bytes.ToLower(chunk)
+	for _, kw := range keywords {
+		if bytes.Contains(lower, bytes.ToLower([]byte(kw))) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractMatchValue trích xuất phần "giá trị" từ 1 match label+value (VD
+// "password=changeme123" → "changeme123", "CVV: 123" → "123") để so khớp với
+// placeholder_exclusion.value_blocklist_patterns — các pattern này ANCHOR
+// (^...$) nên cần value đã tách khỏi label, không phải toàn bộ match.
+//
+// Heuristic (RE2 không có capture group extraction trong luồng hiện tại):
+// lấy phần sau dấu ':'/'=' CUỐI CÙNG trong match; nếu không có, lấy phần sau
+// khoảng trắng CUỐI CÙNG; nếu match không có delimiter/khoảng trắng nào (VD
+// pattern tự nó LÀ giá trị, như AWS key AKIA...), dùng nguyên match. Luôn trim
+// khoảng trắng và dấu ngoặc kép/đơn bao quanh.
+func extractMatchValue(match []byte) []byte {
+	s := match
+	if idx := bytes.LastIndexAny(s, ":="); idx >= 0 && idx+1 < len(s) {
+		s = s[idx+1:]
+	} else if idx := bytes.LastIndexByte(s, ' '); idx >= 0 && idx+1 < len(s) {
+		s = s[idx+1:]
+	}
+	return bytes.Trim(s, " \t\r\n\"'")
+}
+
+// ─── Negation filter ────────────────────────────────────────────────────────
+
+// negationAppliesToPattern kiểm tra negation_filter có áp dụng cho pattern ở
+// vị trí patIdx (0-indexed) không. applies rỗng = áp dụng cho MỌI pattern;
+// ngược lại chỉ áp dụng khi "pattern_<patIdx+1>" có trong danh sách (khớp quy
+// ước 1-indexed của negation_filter.applies_to_patterns, xem parsePatternRef).
+func negationAppliesToPattern(applies []string, patIdx int) bool {
+	if len(applies) == 0 {
+		return true
+	}
+	ref := "pattern_" + itoa(patIdx+1)
+	for _, a := range applies {
+		if a == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// negationTriggered kiểm tra xem có trigger word nào của negation_filter xuất
+// hiện trong khoảng ±windowChars byte quanh match [start, end) không.
+// So khớp case-insensitive (không cần chuẩn hóa dấu — trigger_words trong YAML
+// nên viết đúng dấu tiếng Việt để khớp chính xác).
+func negationTriggered(chunk []byte, start, end, windowChars int, triggerWords []string) bool {
+	ctxStart := maxI(0, start-windowChars)
+	ctxEnd := minI(len(chunk), end+windowChars)
+	window := strings.ToLower(string(chunk[ctxStart:ctxEnd]))
+	for _, w := range triggerWords {
+		if strings.Contains(window, strings.ToLower(w)) {
+			return true
+		}
+	}
+	return false
 }
 
 // ─── Escalation ───────────────────────────────────────────────────────────────

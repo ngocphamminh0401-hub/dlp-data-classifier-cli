@@ -16,7 +16,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.85
 priority: 62
-tags: [financial, tax_code, pii_tax, personal_id]
+tags: [financial, tax_code, pii_tax, personal_id, financial_personal]
 enabled: true
 
 patterns:
@@ -55,3 +55,11 @@ keywords:
 false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
+
+# pattern_1 (dãy 13 số trần) cần gate; pattern_2 có label rõ ràng
+# ("mã số thuế cá nhân:") — miễn gate.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1]
+  exempt_patterns: [pattern_2]

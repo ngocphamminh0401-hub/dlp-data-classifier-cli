@@ -13,7 +13,7 @@ category: pii
 level: SECRET
 weight: 0.92
 priority: 83
-tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13]
+tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13, pii_strong]
 enabled: true
 
 patterns:

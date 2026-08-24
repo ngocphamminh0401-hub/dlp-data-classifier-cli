@@ -13,7 +13,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.90
 priority: 80
-tags: [pii, identity, pii_vn_id, vn_specific]
+tags: [pii, identity, pii_vn_id, vn_specific, personal_identifier, pii_strong]
 enabled: true
 
 patterns:
@@ -106,3 +106,13 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_1 (CCCD 12 số) và pattern_2 (CMND 9 số) là dãy số trần — dễ trùng mã
+# đơn hàng, số serial, số hóa đơn... dù đã có exclude_if_no_keywords/context_
+# required. pattern_3 (MRZ, prefix "VNM" cố định + checksum cấu trúc) đặc
+# trưng cao, giữ CONFIDENTIAL thẳng không cần gate.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1, pattern_2]
+  exempt_patterns: [pattern_3]

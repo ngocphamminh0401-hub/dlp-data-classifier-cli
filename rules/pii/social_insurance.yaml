@@ -13,7 +13,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.88
 priority: 75
-tags: [pii, social_insurance, bhxh, bhyt, financial_pii, ndctn13]
+tags: [pii, social_insurance, bhxh, bhyt, financial_pii, ndctn13, pii_strong]
 enabled: true
 
 patterns:
@@ -78,3 +78,11 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_4 (dãy 10 số trần) là nguồn FP chính — cần gate. pattern_1/2/3 đã có
+# label/prefix rõ ràng ("BHXH:", "BH"+13 ký tự, "BHYT:") — giữ nguyên hành vi cũ.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_4]
+  exempt_patterns: [pattern_1, pattern_2, pattern_3]

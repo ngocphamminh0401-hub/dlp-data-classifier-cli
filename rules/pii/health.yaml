@@ -13,7 +13,7 @@ category: pii
 level: SECRET
 weight: 0.90
 priority: 85
-tags: [pii, health, medical_record, sensitive_pii, ndctn13]
+tags: [pii, health, medical_record, sensitive_pii, ndctn13, pii_strong]
 enabled: true
 
 # Theo tài liệu "Bộ rule kết hợp Regex" (Phần 2): chỉ nhóm HEALTH_RESTRICTED
@@ -208,3 +208,66 @@ keywords:
 false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
+
+# pattern_7 ("bệnh di truyền", override CONFIDENTIAL) tự nhận "không phân
+# biệt phủ định" — vẫn khớp câu hỏi sàng lọc âm tính chuẩn trong bệnh án
+# ("Tiền sử gia đình: Không có ai mắc... bệnh di truyền"). Gate riêng cho
+# pattern này (rule hiện dùng false_positive_reduction.exclude_if_no_keywords
+# chung cho CẢ rule, chưa có gate riêng theo pattern).
+#
+# pattern_9 (tên bệnh thông thường: ung thư, tiểu đường, tim mạch...) THÊM
+# VÀO gate: cẩm nang sức khỏe cộng đồng/tờ rơi/tài liệu đào tạo (chỉ nói về
+# bệnh nói chung, không gắn bệnh nhân cụ thể) vẫn đủ keyword ngữ cảnh (thuốc,
+# điều trị, bác sĩ, xét nghiệm — vốn rất phổ biến) để đạt CONFIDENTIAL —
+# không đúng tinh thần GDPR Điều 9 (chỉ bảo vệ dữ liệu sức khỏe GẮN VỚI 1 cá
+# nhân xác định, không bảo vệ kiến thức y khoa chung).
+#
+# required_corroboration_tags=[personal_identifier]: THAY vì chấp nhận "bất
+# kỳ rule nào khác ≥ CONFIDENTIAL trong chunk" (quá lỏng — 1 tờ rơi có thể có
+# match CONFIDENTIAL không liên quan), chỉ giữ level nếu có bằng chứng CỤ THỂ
+# về định danh cá nhân đi kèm: họ tên (vn_name_001), CCCD (vn_id_001), ngày
+# sinh (dob_001) — 3 rule này đã gắn tag personal_identifier. Không có "mã
+# bệnh nhân" vì codebase chưa có rule riêng cho trường này. Áp dụng cho CẢ
+# pattern_7 (nhất quán: chẩn đoán bệnh di truyền thật cũng nên đi kèm định
+# danh để giữ CONFIDENTIAL, không phải bất kỳ tín hiệu CONFIDENTIAL+ nào khác).
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_7, pattern_9]
+  required_corroboration_tags: [personal_identifier]
+
+# health_001 vốn là rule SECRET quan trọng (GDPR Điều 9) — chỉ downgrade,
+# KHÔNG suppress, để tránh mất recall khi câu phủ định giả (VD "không rõ có
+# phải bệnh di truyền hay không" — vẫn nên giữ 1 phần nghi vấn, không loại
+# hẳn như suppress sẽ làm).
+#
+# 2 nhóm trigger_words gộp chung (Rule chỉ có 1 negation_filter, không phải
+# danh sách riêng theo pattern):
+#   - Phủ định tiền sử bệnh (gốc, cho pattern_7): "không có tiền sử"...
+#   - generic_content_signals (MỚI, cho pattern_9): nội dung mang tính phổ
+#     biến kiến thức/tuyên truyền — "phòng ngừa", "cẩm nang", "tờ rơi"... —
+#     xuất hiện gần tên bệnh thì đây là tài liệu giáo dục, không phải hồ sơ
+#     bệnh nhân cụ thể.
+# Áp dụng CẢ 2 nhóm cho CẢ 2 pattern (không tách riêng): 1 cẩm nang nhắc
+# "bệnh di truyền" cũng nên được nhận diện là nội dung phổ biến, không chỉ áp
+# cho tên bệnh thông thường.
+negation_filter:
+  window_chars: 30
+  trigger_words:
+    - không có tiền sử
+    - không mắc
+    - không ghi nhận
+    - tiền sử gia đình không có
+    - phòng ngừa
+    - cẩm nang
+    - kiến thức
+    - tuyên truyền
+    - khuyến cáo
+    - tờ rơi
+    - infographic
+    - hỏi đáp
+    - "Q&A"
+    - những điều cần biết
+    - dấu hiệu nhận biết
+  action: downgrade_to_gate
+  applies_to_patterns: [pattern_7, pattern_9]

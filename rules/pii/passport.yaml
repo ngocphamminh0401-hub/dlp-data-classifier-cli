@@ -16,7 +16,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.88
 priority: 78
-tags: [pii, identity, passport, travel_doc, vn_specific]
+tags: [pii, identity, passport, travel_doc, vn_specific, pii_strong]
 enabled: true
 
 patterns:
@@ -91,3 +91,17 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_1..4 (B/P/C-NG-X + số, kể cả pattern_4 "FP cao" tự ghi chú trong mô
+# tả) đều là dãy chữ+số trần, cần corroboration. pattern_5 (MRZ dòng 1 đầy đủ
+# "P<VNM...") gần như không thể FP — miễn gate.
+#
+# Ghi chú riêng cho pattern_4 ([A-Z]{1,2}\d{7,8}): nên cân nhắc thêm
+# min_context_window hẹp hơn (hiện 150) hoặc gộp bắt buộc corroboration kép (2
+# primary keyword thay vì 1) trong đợt review kế tiếp — KHÔNG đổi trong đợt
+# này để tránh gộp quá nhiều thay đổi cùng lúc.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
+  exempt_patterns: [pattern_5]

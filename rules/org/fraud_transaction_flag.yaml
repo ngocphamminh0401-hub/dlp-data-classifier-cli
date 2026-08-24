@@ -113,3 +113,18 @@ false_positive_reduction:
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
+
+# Câu "Không có giao dịch bất thường" (xác nhận AN TOÀN) vẫn khớp pattern_1 và
+# có thể tự đủ corroboration nếu có keyword "cơ quan điều tra"/"AML" ở gần đó
+# (dù không liên quan) → vẫn lên CONFIDENTIAL sai dù đã có level_gate ở trên.
+# Dùng suppress (không phải downgrade_to_gate) để loại match này khỏi corroboration
+# hoàn toàn — level_gate.fallback vẫn CONFIDENTIAL, không phải mức an toàn.
+#
+# Không áp cho pattern_2 (rửa tiền — tên chính sách chung): bản chất là cụm
+# danh từ chỉ chính sách, ít khi xuất hiện dạng phủ định trực tiếp kiểu
+# "không rửa tiền" trong văn bản thật.
+negation_filter:
+  window_chars: 30
+  trigger_words: [không có, không phát hiện, không, chưa phát hiện]
+  action: suppress
+  applies_to_patterns: [pattern_1, pattern_3, pattern_4]

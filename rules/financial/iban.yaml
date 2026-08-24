@@ -17,7 +17,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.87
 priority: 58
-tags: [financial, iban, international_banking, account_number]
+tags: [financial, iban, international_banking, account_number, financial_personal]
 enabled: true
 
 patterns:

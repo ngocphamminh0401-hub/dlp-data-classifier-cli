@@ -20,7 +20,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.88
 priority: 70
-tags: [financial, bank_account, account_number]
+tags: [financial, bank_account, account_number, financial_personal]
 enabled: true
 
 patterns:
@@ -123,3 +123,13 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# Toàn bộ 4 pattern bị gate — đây là rule generic nhất trong nhóm financial:
+# không pattern nào có định dạng đủ đặc trưng để miễn gate, kể cả pattern_4
+# với BIN/prefix (vẫn chỉ là "prefix + N số", dễ trùng số điện thoại/mã khác
+# bắt đầu cùng tiền tố). Rule duy nhất trong nhóm số-chung-chung không có
+# exempt_patterns.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]

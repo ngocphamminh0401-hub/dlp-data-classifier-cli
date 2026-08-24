@@ -10,7 +10,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.78
 priority: 78
-tags: [financial, transaction_notification, pii]
+tags: [financial, transaction_notification, pii, financial_personal]
 enabled: true
 
 patterns:

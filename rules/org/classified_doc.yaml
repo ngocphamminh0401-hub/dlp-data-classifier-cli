@@ -33,14 +33,17 @@ patterns:
     context_required: false
     override_level: SECRET
 
-  # RESTRICTED standalone (word boundary) — confidence thấp hơn, cần context
-  # Không match "MẬT" độc lập: từ này xuất hiện phổ biến trong "bảo mật", "mật khẩu",
-  # "bí mật" → quá nhiều false positive. Chỉ match khi có tiền tố "Phân loại:" (pattern trên).
-  - regex: '(?i)\bRESTRICTED\b'
-    description: "ORG-001c RESTRICTED standalone"
-    confidence: 0.82
-    context_required: true
-    override_level: SECRET
+  # ĐÃ GỠ HẲN (không chỉ gate/suppress): pattern "RESTRICTED standalone"
+  # (ORG-001c, `\bRESTRICTED\b`, context_required=true). Dù đã có context_
+  # required + negation_filter (suppress khi gần email disclaimer), vẫn dễ
+  # khớp nhầm trong văn bản tiếng Anh không liên quan phân loại bảo mật:
+  # "restricted diet", "restricted area" (biển báo an toàn lao động, không
+  # phải nhãn tài liệu), "Internal Revenue Service"-style false context...
+  # Không match "MẬT" độc lập vì lý do tương tự (quá phổ biến trong "bảo
+  # mật"/"mật khẩu"/"bí mật"). 3 pattern còn lại (TỐI MẬT/TOP SECRET, RESTRICTED/
+  # MẬT SAU NHÃN "Phân loại:", tuyệt mật) đều yêu cầu cấu trúc nhãn rõ ràng
+  # (viết hoa toàn bộ cố định hoặc đi kèm marker "Phân loại:"/"Classification:")
+  # — đủ độ phủ và an toàn hơn nhiều so với 1 từ tiếng Anh đứng một mình.
 
   # ĐÃ GỠ: pattern regex cho "bảo mật tuyệt đối". Xác minh trên dữ liệu thật
   # (finance_banking__public/fin_pub_00008) cho thấy đây là câu marketing rất
@@ -94,6 +97,9 @@ keywords:
 # không phải tài liệu MANG nhãn đó) không nên đủ để kết luận cả file SECRET.
 # Cần thêm bằng chứng: validator, ≥2 lần xuất hiện, hoặc rule khác (vd: pii,
 # financial) cùng có mặt ở mức CONFIDENTIAL+ — nếu không, hạ về CONFIDENTIAL.
+# Áp dụng cho cả 3 pattern còn lại (không cần applies_to_patterns riêng — sau
+# khi gỡ hẳn pattern "RESTRICTED standalone", không còn pattern nào cần miễn
+# gate/negation_filter riêng như trước).
 level_gate:
   require_corroboration: true
   fallback_level: CONFIDENTIAL
