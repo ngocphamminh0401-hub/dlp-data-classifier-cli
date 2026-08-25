@@ -56,10 +56,21 @@ false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
 
+proximity_window:
+  max_chars: 60
+  same_sentence_required: true
+  keyword_scope: primary
+
 # pattern_1 (dãy 13 số trần) cần gate; pattern_2 có label rõ ràng
 # ("mã số thuế cá nhân:") — miễn gate.
+#
+# min_confidence_bypass=0.90: pattern_1 (conf 0.78, weight 0.85) đạt được tới
+# ~0.96 khi có keyword ngữ cảnh mạnh — cứu trường hợp dãy 13 số trần đứng gần
+# label MST dù chưa đủ khớp cấu trúc pattern_2 (VD label cách xa hơn cú pháp
+# ":"/"=" mà pattern_2 yêu cầu).
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
   applies_to_patterns: [pattern_1]
   exempt_patterns: [pattern_2]
+  min_confidence_bypass: 0.90

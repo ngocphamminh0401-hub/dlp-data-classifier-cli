@@ -84,6 +84,13 @@ false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
 
+# proximity_window: siết thêm ngoài min_context_window — "số hộ chiếu:"/
+# "passport no." thường đứng ngay sát số. Cùng logic vn_id_001.
+proximity_window:
+  max_chars: 60
+  same_sentence_required: true
+  keyword_scope: primary
+
 # SCALE_LARGE theo tài liệu (Bước 3): >50 số hộ chiếu duy nhất trong 1 file
 # → RESTRICTED. Xấp xỉ theo rule ID riêng lẻ, xem giải thích chi tiết ở
 # rules/pii/vn_id.yaml.
@@ -105,3 +112,8 @@ level_gate:
   fallback_level: INTERNAL
   applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
   exempt_patterns: [pattern_5]
+  # min_confidence_bypass=0.90: pattern_1-3 (conf 0.82-0.88, weight 0.88) đạt
+  # được ≥0.90 khi có keyword ngữ cảnh mạnh gần đó. pattern_4 (conf 0.65, "FP
+  # cao" tự ghi chú) KHÔNG BAO GIỜ đạt ngưỡng này dù boost tối đa (~0.87) —
+  # tự động vẫn bị gate đầy đủ, đúng tinh thần "cần siết thêm" đã ghi ở trên.
+  min_confidence_bypass: 0.90

@@ -468,16 +468,26 @@ func (e *Engine) applyLevelGate(matches []RuleMatch) ClassificationLevel {
 		m := &matches[i]
 		rule, gated := e.levelGateRules[m.RuleID]
 		if gated && rule.LevelGate.AppliesToPattern(m.PatternIdx) {
-			corroborated := validatedByRule[m.RuleID] ||
-				counts[m.RuleID] >= 2 ||
-				(rule.LevelGate.MinConfidenceBypass > 0 && m.Confidence >= rule.LevelGate.MinConfidenceBypass)
-			// RequiredCorroborationTags (nếu khai): THAY THẾ hasOtherStrongRule/
-			// hasFamilyCorroboration (quá lỏng — chấp nhận BẤT KỲ rule ≥
-			// CONFIDENTIAL nào) bằng yêu cầu CỤ THỂ các tag định danh cá nhân.
-			if len(rule.LevelGate.RequiredCorroborationTags) > 0 {
-				corroborated = corroborated || hasRequiredTagCorroboration(rule.LevelGate.RequiredCorroborationTags)
+			var corroborated bool
+			if rule.LevelGate.StrictTagsOnly {
+				// strict_tags_only: LOẠI BỎ validatedByRule/counts>=2/
+				// MinConfidenceBypass — corroborated CHỈ dựa vào tag cụ thể.
+				// Dùng khi "≥2 lần khớp" KHÔNG phải bằng chứng đáng tin (VD
+				// insurance_context_001: văn bản điều khoản bảo hiểm dễ dàng
+				// nhắc "bồi thường" ≥2 lần một cách bình thường).
+				corroborated = hasRequiredTagCorroboration(rule.LevelGate.RequiredCorroborationTags)
 			} else {
-				corroborated = corroborated || hasOtherStrongRule(m.RuleID) || hasFamilyCorroboration(m.RuleID)
+				corroborated = validatedByRule[m.RuleID] ||
+					counts[m.RuleID] >= 2 ||
+					(rule.LevelGate.MinConfidenceBypass > 0 && m.Confidence >= rule.LevelGate.MinConfidenceBypass)
+				// RequiredCorroborationTags (nếu khai): THAY THẾ hasOtherStrongRule/
+				// hasFamilyCorroboration (quá lỏng — chấp nhận BẤT KỲ rule ≥
+				// CONFIDENTIAL nào) bằng yêu cầu CỤ THỂ các tag định danh cá nhân.
+				if len(rule.LevelGate.RequiredCorroborationTags) > 0 {
+					corroborated = corroborated || hasRequiredTagCorroboration(rule.LevelGate.RequiredCorroborationTags)
+				} else {
+					corroborated = corroborated || hasOtherStrongRule(m.RuleID) || hasFamilyCorroboration(m.RuleID)
+				}
 			}
 			if !corroborated && m.Level > rule.LevelGate.ParsedFallbackLevel {
 				m.Level = rule.LevelGate.ParsedFallbackLevel

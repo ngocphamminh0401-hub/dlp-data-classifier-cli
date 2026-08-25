@@ -87,3 +87,15 @@ volume_escalation:
       escalate_to: CONFIDENTIAL
     - min_count: 200
       escalate_to: SECRET
+
+# PHÁT HIỆN QUA PHÂN TÍCH DỮ LIỆU THẬT: rule chưa từng có level_gate — 1
+# email đứng lẻ trong thông cáo báo chí/tài liệu liên hệ PUBLIC (VD "Mọi
+# thắc mắc xin liên hệ: nguyenvana@gmail.com") vẫn tự động INTERNAL. ~1154
+# lần là "thủ phạm" over-classify PUBLIC trên toàn bộ ruleset, đối chiếu qua
+# rawdata/ — lớn thứ 2 sau vn_name_001. Email vai trò/tổ chức (info@,
+# hotline@...) đã loại qua placeholder_exclusion ở trên; gate này xử lý
+# thêm trường hợp email CÁ NHÂN thật nhưng chỉ nhắc 1 lần không kèm PII khác
+# — vẫn dùng volume_escalation ở trên để bắt đúng rủi ro leak hàng loạt.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC

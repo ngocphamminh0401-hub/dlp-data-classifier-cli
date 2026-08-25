@@ -40,10 +40,22 @@ patterns:
     require_keyword_within: 40
 
   # Ngày sinh dạng chữ: 15 tháng 03 năm 1990
+  # ĐÃ SỬA BUG: context_required=false khiến pattern khớp MỌI ngày tháng dạng
+  # chữ, kể cả NGÀY BAN HÀNH VĂN BẢN ("Số: 37/HDYTDA/2024 Bắc An, ngày 05
+  # tháng 06 năm 2024 KHUYẾN CÁO...") — mẫu tiêu đề công văn/thông báo y tế
+  # CỰC KỲ phổ biến. Ngày ban hành sau đó tự "cứu" health_001 qua
+  # hasOtherStrongRule (dob_001 CONFIDENTIAL... à INTERNAL + health_001 CONFI-
+  # DENTIAL cùng chunk → corroborate lẫn nhau vòng tròn dù cả 2 đều sai) —
+  # xác nhận qua 5+ file health_pub_000XX.docx (healthcare__public, ground
+  # truth PUBLIC). Cùng lớp lỗi đã sửa cho pattern_3 (MM/DD/YYYY)/pattern_5
+  # (năm sinh riêng) trong rule này — thêm require_keyword_within để buộc
+  # keyword "ngày sinh"/"sinh ngày"/DOB phải THỰC SỰ gần match, không chỉ có
+  # mặt đâu đó trong toàn chunk.
   - regex: '\b(?:0?[1-9]|[12]\d|3[01])\s+tháng\s+(?:0?[1-9]|1[0-2])\s+năm\s+(?:19|20)\d{2}\b'
     description: "Ngày sinh dạng chữ Tiếng Việt (D tháng M năm YYYY)"
     confidence: 0.88
-    context_required: false
+    context_required: true
+    require_keyword_within: 40
 
   # Năm sinh riêng biệt kết hợp keyword — low confidence, hỗ trợ compound.
   # FP cao nhất trong rule: 1 năm 4 chữ số (1900-2029) xuất hiện ở khắp nơi
@@ -86,3 +98,11 @@ keywords:
 false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
+
+# PHÁT HIỆN QUA PHÂN TÍCH DỮ LIỆU THẬT: rule chưa từng có level_gate — 1
+# ngày/năm sinh đứng lẻ trong tin tức PUBLIC (VD tiểu sử "sinh năm 1990")
+# vẫn tự động INTERNAL. ~490 lần là "thủ phạm" over-classify PUBLIC trên
+# toàn bộ ruleset, đối chiếu qua rawdata/.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC

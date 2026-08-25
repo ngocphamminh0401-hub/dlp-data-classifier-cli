@@ -140,3 +140,21 @@ false_positive_reduction:
   min_context_window: 80
   exclude_if_no_keywords: false
   # Pattern đã nhúng cụm từ đặc trưng vào regex → không cần keyword riêng
+
+# "án tích" (ORG-006e/pattern_5) khớp nhầm tiêu chí TUYỂN DỤNG chuẩn ("Sức
+# khỏe tốt, không có án tích", "có quốc tịch Việt Nam, lý lịch rõ ràng,
+# không có án tích") — yêu cầu lý lịch tư pháp trong sạch khi ứng tuyển,
+# KHÔNG phải bằng chứng có án tích thật. Xác nhận qua health_pub_00128/
+# 00260.docx (healthcare__public, ground truth PUBLIC). Rule này chủ trương
+# KHÔNG dùng level_gate (xem ghi chú đầu file — CRIMINAL_AML luôn RESTRICTED
+# không điều kiện), nên dùng negation_filter action=suppress (không cần
+# level_gate) thay vì downgrade_to_gate — loại hẳn match "không có án tích"
+# khỏi kết quả, nhất quán với chủ trương "1 lần nhắc là đủ nghiêm trọng"
+# của rule (phủ định trực tiếp thì ngược lại — không nên tính là bằng chứng
+# gì cả, kể cả INTERNAL). Chỉ áp cho pattern_5 — "khởi tố"/"tiền án"/"tiền
+# sự" hiếm khi bị phủ định tự nhiên tương tự trong tiêu chí tuyển dụng.
+negation_filter:
+  window_chars: 20
+  trigger_words: ["không có"]
+  action: suppress
+  applies_to_patterns: [pattern_5]

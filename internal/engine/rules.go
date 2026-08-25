@@ -96,6 +96,17 @@ type KeywordLogic struct {
 }
 
 // FPReduction configures false-positive reduction strategies.
+//
+// MinContextWindow: khi ExcludeIfNoKeywords=true VÀ MinContextWindow>0, check
+// "có keyword của rule" chuyển từ CHUNK-WIDE (hits.HasRule, mặc định khi
+// MinContextWindow=0) sang GIỚI HẠN KHOẢNG CÁCH — phải có ≥1 keyword (primary
+// hoặc secondary) trong vòng MinContextWindow byte quanh CHÍNH match đó. Đây
+// là vế (a) trong quan hệ AND với ProximityWindow (xem Rule.ProximityWindow)
+// — chỉ CÓ HIỆU LỰC khi rule đó cũng khai proximity_window (validate ở
+// loadRule); rule không khai proximity_window giữ nguyên hành vi chunk-wide
+// cũ dù có set MinContextWindow (field này TRƯỚC ĐÂY hoàn toàn không được
+// engine đọc — dead field — nên không có rule nào trong ruleset hiện tại lỡ
+// phụ thuộc vào việc nó bị bỏ qua).
 type FPReduction struct {
 	MinContextWindow    int     `yaml:"min_context_window"`
 	ExcludeIfNoKeywords bool    `yaml:"exclude_if_no_keywords"`
@@ -172,6 +183,20 @@ type LevelGate struct {
 	// Tags cần thiết (VD "personal_identifier" trên vn_name_001/vn_id_001/
 	// dob_001) rồi trỏ vào đây.
 	RequiredCorroborationTags []string `yaml:"required_corroboration_tags"`
+
+	// StrictTagsOnly: nếu true VÀ RequiredCorroborationTags khai, LOẠI BỎ
+	// LUÔN 3 điều kiện corroboration còn lại (validatedByRule, counts>=2,
+	// MinConfidenceBypass) — corroborated CHỈ còn = hasRequiredTagCorroboration.
+	// Dùng khi counts>=2 (tự lặp lại) KHÔNG phải bằng chứng đáng tin cho rule
+	// này — VD insurance_context_001: văn bản điều khoản/quy tắc bảo hiểm
+	// PUBLIC bình thường đã dễ dàng nhắc "bồi thường"/"yêu cầu bồi thường" ≥2
+	// lần (2 pattern khác nhau khớp cùng 1 cụm), khiến counts>=2 gần như luôn
+	// đúng và vô hiệu hóa hoàn toàn RequiredCorroborationTags nếu không loại
+	// bỏ — xác nhận qua test trực tiếp trước khi thêm field này. false (mặc
+	// định) = giữ hành vi cũ (health_001 vẫn dùng counts>=2 làm 1 trong các
+	// điều kiện hợp lệ — "≥2 lần nhắc tên bệnh" LÀ tín hiệu đáng tin cho rule
+	// đó, khác insurance_context_001).
+	StrictTagsOnly bool `yaml:"strict_tags_only"`
 
 	ParsedFallbackLevel ClassificationLevel
 }
@@ -286,6 +311,45 @@ type VolumeEscalation struct {
 	Thresholds []VolumeThreshold `yaml:"thresholds"`
 }
 
+// ProximityWindow là điều kiện BỔ SUNG (AND, không thay thế) cho
+// FPReduction.ExcludeIfNoKeywords/MinContextWindow — vế (a) là "có keyword
+// trong MinContextWindow byte quanh match" (lưới an toàn rộng, không cần
+// cùng câu), vế (b) là ProximityWindow: "có keyword trong MaxChars byte
+// quanh match VÀ (nếu SameSentenceRequired) trong CÙNG CÂU với match". Một
+// match chỉ pass FP-reduction khi thỏa CẢ HAI vế — xem điểm dùng trong
+// regex.go (matchAllPatterns, bước "FP reduction: exclude_if_no_keywords").
+//
+// Ranh giới câu (xem crossesSentenceBoundary trong regex.go) xử lý riêng dấu
+// "." làm separator hàng nghìn/thập phân ("25.000.000") và viết tắt hành
+// chính/học thuật VN (TP., Th.S, PGS., GS., ĐH., Cty., Q., P., "Điều 5.") —
+// không cắt câu ngây thơ theo mọi dấu chấm, tránh phá hỏng chính các rule số
+// tiền/số tài khoản cần bảo vệ nhất.
+//
+// Chỉ CÓ HIỆU LỰC khi FPReduction.ExcludeIfNoKeywords=true VÀ
+// FPReduction.MinContextWindow>0 (validate ở loadRule) — MaxChars=0 (mặc
+// định) = tắt hoàn toàn, không ảnh hưởng rule không khai báo field này.
+type ProximityWindow struct {
+	// MaxChars là khoảng cách tối đa (byte) giữa keyword và match cho vế (b).
+	MaxChars int `yaml:"max_chars"`
+
+	// SameSentenceRequired: nếu true, keyword còn phải cùng câu với match
+	// (không bị ranh giới kết câu thật cắt ngang). Nếu KHÔNG tìm thấy ranh
+	// giới câu nào trong ±100 byte quanh keyword (văn bản dạng bảng/liệt kê
+	// không dấu câu chuẩn — sao kê, bảng lương, danh sách khách hàng), bỏ
+	// qua yêu cầu này (fallback_on_no_boundary: window) — ưu tiên không mất
+	// recall trên dữ liệu dạng bảng.
+	SameSentenceRequired bool `yaml:"same_sentence_required"`
+
+	// KeywordScope: "primary" (mặc định) chỉ tính keyword primary, hoặc
+	// "primary_or_secondary" tính cả 2 loại.
+	KeywordScope string `yaml:"keyword_scope"`
+
+	// FallbackOnNoBoundary: hiện chỉ hỗ trợ "window" (mặc định) — dùng
+	// MinContextWindow (vế a) làm lưới dự phòng khi không xác định được ranh
+	// giới câu. Field giữ lại để tương thích schema, validate ở loadRule.
+	FallbackOnNoBoundary string `yaml:"fallback_on_no_boundary"`
+}
+
 // Rule is a loaded and compiled classification rule.
 type Rule struct {
 	ID           string        `yaml:"id"`
@@ -316,6 +380,11 @@ type Rule struct {
 	// giá trị placeholder/ví dụ. Rỗng (mặc định) = tắt — không thay đổi hành
 	// vi hiện có.
 	PlaceholderExclusion PlaceholderExclusion `yaml:"placeholder_exclusion"`
+
+	// ProximityWindow siết false_positive_reduction.exclude_if_no_keywords
+	// xuống mức khoảng cách + ranh giới câu thay vì chunk-wide. MaxChars=0
+	// (mặc định) = tắt — không thay đổi hành vi hiện có.
+	ProximityWindow ProximityWindow `yaml:"proximity_window"`
 
 	// Priority xác định thứ tự đánh giá rule (cao hơn = đánh giá trước).
 	// Rule có priority cao hơn được kích hoạt fast-fail sớm hơn.
@@ -504,6 +573,9 @@ func loadRule(path string) (*Rule, error) {
 				return nil, fmt.Errorf("rule %s: level_gate.exempt_patterns: %w", r.ID, err)
 			}
 		}
+		if r.LevelGate.StrictTagsOnly && len(r.LevelGate.RequiredCorroborationTags) == 0 {
+			return nil, fmt.Errorf("rule %s: level_gate.strict_tags_only=true yêu cầu required_corroboration_tags không rỗng", r.ID)
+		}
 	}
 
 	if len(r.NegationFilter.TriggerWords) > 0 {
@@ -546,6 +618,29 @@ func loadRule(path string) (*Rule, error) {
 	}
 	if len(pe.DocContextDiscountKeywords) > 0 && (pe.DocContextDiscountFactor <= 0 || pe.DocContextDiscountFactor >= 1) {
 		return nil, fmt.Errorf("rule %s: placeholder_exclusion.doc_context_discount_factor phải trong khoảng (0,1), có: %v", r.ID, pe.DocContextDiscountFactor)
+	}
+
+	if r.ProximityWindow.MaxChars > 0 {
+		if !r.FPReduction.ExcludeIfNoKeywords {
+			return nil, fmt.Errorf("rule %s: proximity_window yêu cầu false_positive_reduction.exclude_if_no_keywords=true", r.ID)
+		}
+		if r.FPReduction.MinContextWindow <= 0 {
+			return nil, fmt.Errorf("rule %s: proximity_window yêu cầu false_positive_reduction.min_context_window > 0 (vế (a) trong quan hệ AND)", r.ID)
+		}
+		switch r.ProximityWindow.KeywordScope {
+		case "":
+			r.ProximityWindow.KeywordScope = "primary"
+		case "primary", "primary_or_secondary":
+		default:
+			return nil, fmt.Errorf("rule %s: proximity_window.keyword_scope %q không hợp lệ (chỉ hỗ trợ \"primary\" hoặc \"primary_or_secondary\")", r.ID, r.ProximityWindow.KeywordScope)
+		}
+		switch r.ProximityWindow.FallbackOnNoBoundary {
+		case "":
+			r.ProximityWindow.FallbackOnNoBoundary = "window"
+		case "window":
+		default:
+			return nil, fmt.Errorf("rule %s: proximity_window.fallback_on_no_boundary %q không hợp lệ (chỉ hỗ trợ \"window\")", r.ID, r.ProximityWindow.FallbackOnNoBoundary)
+		}
 	}
 
 	for i := range r.Patterns {

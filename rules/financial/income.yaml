@@ -85,9 +85,23 @@ keyword_logic:
 
 false_positive_reduction:
   min_context_window: 200
-  exclude_if_no_keywords: false
+  # ĐÃ ĐỔI false→true để bật proximity_window bên dưới (yêu cầu ở loadRule).
+  # keyword_logic.min_secondary=1 (chunk-wide, đánh giá TRƯỚC khi chạy pattern)
+  # vẫn giữ nguyên vai trò lọc rule-wide cũ; exclude_if_no_keywords+proximity_
+  # window bổ sung thêm lớp lọc PER-MATCH (khoảng cách + cùng câu) mà min_
+  # secondary không làm được.
+  exclude_if_no_keywords: true
   # min_secondary=1 bắt buộc: file phải có ít nhất 1 keyword phụ (BHXH, phiếu lương,
   # hợp đồng lao động...) để phân biệt dữ liệu lương cá nhân với bảng ngân sách phòng ban.
+
+# proximity_window: max_chars=80 (rộng hơn nhóm PII/tài khoản) vì cụm lương
+# thường có cấu trúc câu dài hơn ("Lương cơ bản theo hợp đồng lao động là...").
+# keyword_scope=primary_or_secondary: cho phép cả keyword phụ (BHXH, phiếu
+# lương...) tính vào proximity, không chỉ riêng "lương"/"thu nhập".
+proximity_window:
+  max_chars: 80
+  same_sentence_required: true
+  keyword_scope: primary_or_secondary
 
 # Toàn bộ 4 pattern bị gate — số tiền là dữ liệu quá phổ biến để tin tưởng chỉ
 # với 1 primary + 1 secondary keyword (keyword_logic hiện tại: min_primary=1,
@@ -100,6 +114,32 @@ level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
   applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
+  # ĐÃ THAY min_confidence_bypass=0.92 BẰNG required_corroboration_tags +
+  # strict_tags_only: xác nhận qua rule-attribution trên rawdata/ rằng
+  # min_confidence_bypass KHÔNG chặn được nguồn FP lớn nhất — khoảng lương
+  # QUẢNG CÁO trong TIN TUYỂN DỤNG công khai ("Thu nhập: 10.000.000 -
+  # 15.000.000 VNĐ/tháng") đạt confidence 0.97-1.00 (nhiều keyword mạnh xung
+  # quanh: "lương", "thu nhập", "thỏa thuận") → LUÔN vượt 0.92, bypass gate
+  # vô điều kiện — gây 59 file PUBLIC (tin tuyển dụng) bị đẩy sai lên
+  # CONFIDENTIAL. Khác biệt thật giữa "tin tuyển dụng" (khoảng lương chung,
+  # không gắn 1 người) và "thông báo lương thật" (số cụ thể của 1 nhân viên
+  # có tên) là CÓ ĐỊNH DANH CÁ NHÂN đi kèm hay không — dùng
+  # required_corroboration_tags:[personal_identifier] (họ tên/CCCD/ngày sinh,
+  # cùng cơ chế đã dùng cho health_001) thay vì ngưỡng confidence.
+  #
+  # strict_tags_only=true BẮT BUỘC: nếu không, min_confidence_bypass=0.92 vẫn
+  # là nhánh OR độc lập và tiếp tục vô hiệu hóa fix (conf tin tuyển dụng vẫn
+  # ~0.97-1.00) — cùng lớp lỗi đã sửa cho insurance_context_001.
+  #
+  # ĐÁNH ĐỔI ĐÃ BIẾT (chấp nhận, xác nhận qua đối chiếu trực tiếp trên
+  # hr__confidential): 283/317 (89%) match income_001 thật có personal_
+  # identifier đi kèm nên KHÔNG bị ảnh hưởng; 30/34 còn lại vẫn giữ đúng
+  # CONFIDENTIAL nhờ rule khác (PII/hợp đồng) trong cùng file corroborate ở
+  # mức file; chỉ 4/6344 file (thông báo lương qua chat nội bộ không trích
+  # xuất được tên/CCCD gần đó) bị hạ nhầm xuống INTERNAL — đổi lấy 59 file
+  # PUBLIC (tỷ lệ ~14:1).
+  required_corroboration_tags: [personal_identifier]
+  strict_tags_only: true
 
 # Pattern 1 (lương + số tiền) cũng khớp văn bản CHÍNH SÁCH LƯƠNG CÔNG KHAI
 # (quy định mức lương tối thiểu vùng, nghị định/thông tư nhà nước, tin tức

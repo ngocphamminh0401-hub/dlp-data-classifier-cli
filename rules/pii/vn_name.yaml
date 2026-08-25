@@ -91,6 +91,18 @@ false_positive_reduction:
   exclude_if_no_keywords: true
   min_context_window: 100
 
+# PHÁT HIỆN QUA PHÂN TÍCH DỮ LIỆU THẬT: rule chưa từng có level_gate — 1 tên
+# người đứng lẻ trong tin tức/thông cáo báo chí PUBLIC (VD "Giám đốc Nguyễn
+# Văn A phát biểu tại lễ khai trương...") vẫn tự động INTERNAL. Đây là 1
+# trong các nguồn over-classify PUBLIC lớn nhất ruleset (~1670 lần là "thủ
+# phạm" trên toàn bộ domain, đối chiếu qua rawdata/). Một cái tên ĐƠN THUẦN
+# (không kèm CCCD/ngày sinh/địa chỉ/liên hệ khác) không đủ để coi là dữ liệu
+# nội bộ nhạy cảm — cần lặp lại (danh sách nhiều tên) hoặc rule PII khác
+# corroborate mới giữ INTERNAL.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+
 # Tên minh họa/placeholder trong văn bản mẫu VN (hợp đồng mẫu, template) theo
 # quy ước "[Họ] [Chữ đệm] + 1 CHỮ CÁI ĐƠN viết hoa" (VD "Nguyễn Văn A", "Trần
 # Thị B", "Lê Văn C"...) — tên người Việt thật KHÔNG BAO GIỜ chỉ có 1 ký tự

@@ -110,9 +110,22 @@ false_positive_reduction:
 # CONFIDENTIAL khác (71 với bank_account_001) nên vẫn tự corroborate đúng;
 # chỉ các mention thống kê/demo đơn lẻ (không PII/tài khoản thật đi kèm)
 # mới bị hạ về INTERNAL.
+#
+# ĐÃ SIẾT THÊM (required_corroboration_tags + strict_tags_only): "hasOtherStrong
+# Rule" (mặc định) vẫn quá LỎNG — điều khoản "Quyền & nghĩa vụ khách hàng"
+# boilerplate trong TOS ngân hàng PUBLIC lặp lại "giao dịch bất thường" ≥2
+# lần (VD 1 lần ở mục "quyền", 1 lần ở mục "nghĩa vụ") nên tự thỏa
+# counts[ruleID]>=2 — vô hiệu hóa gate, gây 14 file PUBLIC bị đẩy sai lên
+# CONFIDENTIAL. Xác nhận AN TOÀN qua đối chiếu trực tiếp: 0/56 file FP PUBLIC
+# có match financial_personal (bank_account_001/credit_card_001/...) đi kèm,
+# trong khi 57/60 file CONFIDENTIAL thật CÓ — tách biệt gần như tuyệt đối.
+# strict_tags_only bắt buộc để loại bỏ nhánh counts>=2 nói trên (cùng lớp
+# lỗi đã sửa cho insurance_context_001).
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
+  required_corroboration_tags: [financial_personal]
+  strict_tags_only: true
 
 # Câu "Không có giao dịch bất thường" (xác nhận AN TOÀN) vẫn khớp pattern_1 và
 # có thể tự đủ corroboration nếu có keyword "cơ quan điều tra"/"AML" ở gần đó

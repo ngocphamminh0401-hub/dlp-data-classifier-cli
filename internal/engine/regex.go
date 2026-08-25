@@ -47,6 +47,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // matchOpts chứa các tham số scoring được truyền từ Engine.Scan().
@@ -181,8 +183,23 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			// ── 4. FP reduction: exclude_if_no_keywords ───────────────────
 			// Cho các loại dữ liệu như số CMND/CCCD, số tài khoản — cần có keyword
 			// đi kèm để phân biệt với số serial, mã sản phẩm, ...
-			if rule.FPReduction.ExcludeIfNoKeywords && !hits.HasRule(rule.ID) {
-				continue
+			//
+			// Nếu rule khai proximity_window (MaxChars>0): thay check chunk-wide
+			// bằng quan hệ AND 2 vế — (a) keyword trong MinContextWindow byte
+			// (lưới an toàn rộng) VÀ (b) keyword thỏa ProximityWindow (gần +
+			// cùng câu). Rule KHÔNG khai proximity_window giữ nguyên hành vi
+			// chunk-wide cũ (hits.HasRule) — không thay đổi hành vi hiện có.
+			if rule.FPReduction.ExcludeIfNoKeywords {
+				if rule.ProximityWindow.MaxChars > 0 {
+					if !hasKeywordWithinWindow(hits, rule.ID, start, end, rule.FPReduction.MinContextWindow) {
+						continue
+					}
+					if !keywordSatisfiesProximity(chunk, hits, rule.ID, start, end, rule.ProximityWindow) {
+						continue
+					}
+				} else if !hits.HasRule(rule.ID) {
+					continue
+				}
 			}
 
 			// ── 5. CVV + Expiry context boost (cho credit card) ───────────
@@ -310,6 +327,185 @@ func hasPrimaryKeywordWithin(hits HitMap, ruleID string, matchStart, matchEnd in
 		}
 		if int(kwDistance(hit.Offset, matchStart, matchEnd)) <= windowChars {
 			return true
+		}
+	}
+	return false
+}
+
+// hasKeywordWithinWindow kiểm tra có keyword BẤT KỲ (primary hoặc secondary)
+// của ruleID nằm trong khoảng windowChars quanh match không — dùng cho vế
+// (a) của FPReduction.ExcludeIfNoKeywords khi MinContextWindow>0 (lưới an
+// toàn rộng, không đòi cùng câu — xem ProximityWindow).
+func hasKeywordWithinWindow(hits HitMap, ruleID string, matchStart, matchEnd int64, windowChars int) bool {
+	for _, hit := range hits[ruleID] {
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) <= windowChars {
+			return true
+		}
+	}
+	return false
+}
+
+// ─── Proximity window (khoảng cách + ranh giới câu, tiếng Việt) ──────────────
+//
+// vnSentenceAbbrevTokens: token (đã lowercase) đứng NGAY TRƯỚC 1 dấu "." mà
+// KHÔNG coi là ranh giới kết câu — viết tắt hành chính/học thuật VN phổ biến:
+// TP., Th.S (2 token "th"+"s"), ThS., T.S (2 token "t"+"s"), PGS., GS., ĐH.,
+// Cty., Q. (Quận), P. (Phường).
+var vnSentenceAbbrevTokens = map[string]bool{
+	"tp": true, "th": true, "ths": true, "t": true, "s": true,
+	"pgs": true, "gs": true, "đh": true, "cty": true, "q": true, "p": true,
+}
+
+// isDigitToken báo cáo token có phải TOÀN CHỮ SỐ không — dùng loại trừ số
+// thứ tự điều khoản ("Điều 5.", "1.2.3.") khỏi ranh giới kết câu.
+func isDigitToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// wordBefore trích token chữ+số liền kề NGAY TRƯỚC byte offset pos trong
+// chunk (dừng ở khoảng trắng/dấu câu) — dùng kiểm tra viết tắt/số thứ tự
+// đứng trước dấu ".".
+func wordBefore(chunk []byte, pos int) string {
+	start := pos
+	for start > 0 {
+		r, size := utf8.DecodeLastRune(chunk[:start])
+		if r == utf8.RuneError && size <= 1 {
+			break
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			break
+		}
+		start -= size
+	}
+	return string(chunk[start:pos])
+}
+
+// isSentenceEndDot báo cáo dấu "." tại chunk[pos] có phải ranh giới kết câu
+// THẬT không. Loại trừ theo thứ tự:
+//  1. \d.\d — separator hàng nghìn/thập phân ("25.000.000", "3.14").
+//  2. Viết tắt hành chính VN (vnSentenceAbbrevTokens) hoặc số thứ tự điều
+//     khoản ("Điều 5.", "1.2.") — token ngay trước dấu "." toàn chữ số.
+//
+// Còn lại: "." là ranh giới câu nếu theo sau (bỏ qua khoảng trắng) là chữ
+// hoa (kể cả chữ hoa có dấu tiếng Việt) hoặc xuống dòng/hết chunk.
+func isSentenceEndDot(chunk []byte, pos int) bool {
+	if pos > 0 && pos+1 < len(chunk) {
+		before, after := chunk[pos-1], chunk[pos+1]
+		if before >= '0' && before <= '9' && after >= '0' && after <= '9' {
+			return false
+		}
+	}
+	word := strings.ToLower(wordBefore(chunk, pos))
+	if vnSentenceAbbrevTokens[word] || isDigitToken(word) {
+		return false
+	}
+	i := pos + 1
+	for i < len(chunk) && (chunk[i] == ' ' || chunk[i] == '\t') {
+		i++
+	}
+	if i >= len(chunk) {
+		return true
+	}
+	if chunk[i] == '\n' {
+		return true
+	}
+	r, _ := utf8.DecodeRune(chunk[i:])
+	return unicode.IsUpper(r)
+}
+
+// crossesSentenceBoundary báo cáo có ranh giới kết câu THẬT nào trong
+// chunk[from:to) không.
+//
+// "\n" ĐƠN LẺ KHÔNG phải ranh giới câu: file DOCX/PDF trích xuất chèn "\n"
+// liên tục do ngắt dòng/cấu trúc <w:p>/PDF line wrap, không phải do hết câu
+// — xác nhận qua fin_conf_00009.pdf: label "số tài khoản:" và giá trị
+// "776888057" nằm 2 dòng khác nhau (line wrap thuần túy) khiến toàn bộ match
+// mất corroboration oan nếu coi "\n" là ranh giới. Chỉ "\n\n" (dòng trống/
+// ngắt đoạn thật) mới coi là ranh giới câu.
+//
+// ":" KHÔNG coi là ranh giới câu (đã bỏ rule cũ "cuối dòng = ranh giới"):
+// cùng lý do — "Nhãn:\nGiá trị" (label và giá trị tách dòng) là mẫu CỰC KỲ
+// phổ biến trong văn bản trích xuất, cần giữ NGUYÊN "cùng câu" để corroborate
+// đúng, không phải ranh giới.
+//
+// ";", "!", "?" luôn là ranh giới; "." áp dụng loại trừ qua isSentenceEndDot.
+func crossesSentenceBoundary(chunk []byte, from, to int) bool {
+	if from > to {
+		from, to = to, from
+	}
+	from = maxI(0, from)
+	to = minI(len(chunk), to)
+	for i := from; i < to; i++ {
+		switch chunk[i] {
+		case '\n':
+			if i+1 < to && chunk[i+1] == '\n' {
+				return true
+			}
+		case ';', '!', '?':
+			return true
+		case '.':
+			if isSentenceEndDot(chunk, i) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasSentenceBoundaryNear báo cáo có ranh giới câu nào trong ±radius byte
+// quanh pos không — dùng cho fallback_on_no_boundary: nếu KHÔNG tìm thấy
+// ranh giới câu nào gần keyword (văn bản dạng bảng/liệt kê không dấu câu
+// chuẩn), bỏ qua yêu cầu same_sentence_required thay vì báo lỗi/mất recall.
+func hasSentenceBoundaryNear(chunk []byte, pos, radius int) bool {
+	return crossesSentenceBoundary(chunk, pos-radius, pos+radius)
+}
+
+// keywordSatisfiesProximity kiểm tra có ≥1 keyword (theo pw.KeywordScope)
+// của ruleID thỏa ProximityWindow quanh match [matchStart, matchEnd) không:
+// khoảng cách ≤ pw.MaxChars VÀ (nếu SameSentenceRequired) cùng câu với match
+// — trừ khi không xác định được ranh giới câu nào gần keyword (fallback:
+// coi như thỏa, xem hasSentenceBoundaryNear).
+func keywordSatisfiesProximity(chunk []byte, hits HitMap, ruleID string, matchStart, matchEnd int64, pw ProximityWindow) bool {
+	// fallback_on_no_boundary=window: nếu KHÔNG tìm thấy ranh giới câu nào
+	// trong ±100 byte quanh CHÍNH MATCH (không phải quanh từng keyword riêng
+	// lẻ) → đây nhiều khả năng là dữ liệu dạng bảng/liệt kê (header cách xa
+	// value nhiều dòng/cột — VD "Số tài khoản" ở hàng tiêu đề, giá trị nằm ở
+	// ô cách đó hàng trăm byte, không có dấu câu nào giữa 2 vị trí) — bỏ qua
+	// TOÀN BỘ proximity_window (cả max_chars lẫn same_sentence), coi như đã
+	// thỏa vế (b); vế (a) — min_context_window — vẫn là rào chắn duy nhất
+	// trong trường hợp này. Xác nhận qua fin_top_00676.docx (bảng khách hàng
+	// VIP nhiều cột: header "Số tài khoản" và giá trị 14 số cách nhau xa hơn
+	// max_chars nhưng không có dấu câu nào ở giữa — check max_chars trước
+	// fallback như bản đầu khiến TOÀN BỘ match dạng bảng bị loại oan).
+	if pw.SameSentenceRequired && !hasSentenceBoundaryNear(chunk, int(matchStart), 100) {
+		return true
+	}
+
+	primaryOnly := pw.KeywordScope != "primary_or_secondary"
+	for _, hit := range hits[ruleID] {
+		if primaryOnly && !hit.Primary {
+			continue
+		}
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) > pw.MaxChars {
+			continue
+		}
+		if !pw.SameSentenceRequired {
+			return true
+		}
+		lo, hi := int(hit.Offset), int(matchStart)
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		if !crossesSentenceBoundary(chunk, lo, hi) {
+			return true // cùng câu thật
 		}
 	}
 	return false

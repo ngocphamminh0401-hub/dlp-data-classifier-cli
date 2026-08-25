@@ -65,3 +65,17 @@ keywords:
     - "thỏa thuận bảo mật"
     - "non-disclosure"
     - "classification level"
+
+# Rule này TRƯỚC ĐÂY không có level_gate nào (khác classified_doc_001 đã có
+# từ đầu) — pattern_1 (`\bBÍ\s*MẬT\b`, viết hoa) khớp nhầm TIÊU ĐỀ CHƯƠNG
+# trong nội quy lao động liệt kê các loại tài sản cần bảo vệ ("CHƯƠNG VI.
+# BẢO VỆ TÀI SẢN, BÍ MẬT KINH DOANH, BÍ MẬT CÔNG NGHỆ, SỞ HỮU TRÍ TUỆ") —
+# đây là ĐIỀU KHOẢN CHÍNH SÁCH liệt kê khái niệm, không phải nhãn phân loại
+# tài liệu thật, cùng lớp lỗi đã sửa cho classified_doc_001 ("bảo mật tuyệt
+# đối"). Xác nhận AN TOÀN: cụm "bí mật kinh doanh" chỉ xuất hiện 2/12743 file
+# hr__confidential+top_secret thật, cùng cách dùng liệt kê chung chung —
+# không phải bằng chứng phân loại của 2 file đó (level đúng của chúng đến từ
+# tín hiệu PII/kỷ luật khác, không phụ thuộc match này).
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL

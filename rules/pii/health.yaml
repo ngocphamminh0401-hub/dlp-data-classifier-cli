@@ -230,10 +230,36 @@ false_positive_reduction:
 # bệnh nhân" vì codebase chưa có rule riêng cho trường này. Áp dụng cho CẢ
 # pattern_7 (nhất quán: chẩn đoán bệnh di truyền thật cũng nên đi kèm định
 # danh để giữ CONFIDENTIAL, không phải bất kỳ tín hiệu CONFIDENTIAL+ nào khác).
+#
+# MỞ RỘNG sang pattern_1/2/4/11 (bệnh án, phiếu khám/khám lâm sàng, kết quả
+# xét nghiệm có label, mã ICD): phân tích rule-attribution trên rawdata/ cho
+# thấy đây là 4 pattern gây FP PUBLIC lớn nhất còn lại của rule (184/204 file)
+# — khớp BẢNG GIÁ DỊCH VỤ Y TẾ ("Khám lâm sàng tổng quát ... 40.000đ"), LỊCH
+# TIÊM CHỦNG, tin tuyển dụng ("Khoa xét nghiệm:", "Kỹ thuật viên xét
+# nghiệm:"), mã dịch vụ BHYT dạng ICD ("K01.01") — đều là văn bản CÔNG KHAI
+# không gắn bệnh nhân cụ thể, không phải hồ sơ y tế thật. Xác nhận AN TOÀN
+# qua đối chiếu trực tiếp: 9/9 hóa đơn bệnh nhân thật (healthcare__
+# confidential, có "BHYT chi trả"/"Đơn giá" giống bảng giá) đều có
+# personal_identifier đi kèm (tên/CCCD/ngày sinh bệnh nhân) nên KHÔNG bị ảnh
+# hưởng; ngược lại phần lớn file bảng giá/lịch tiêm PUBLIC không có.
+# ĐÃ THỬ strict_tags_only=true RỒI GỠ: giả thuyết "counts[health_001]>=2 là
+# đường vòng qua required_corroboration_tags" đúng cho FP (giảm thêm ~90 file
+# PUBLIC), NHƯNG gây regression 49 file healthcare__confidential thật — xác
+# nhận qua đối chiếu trực tiếp: các bảng dữ liệu bệnh nhân dạng LIST (VD
+# health_conf_00206/00291/00294/00346.docx: "1 Phạm Đình Khánh CH1019... I10
+# - Tăng huyết áp...") có TÊN THẬT ngay trong hàng dữ liệu nhưng vn_name_001
+# KHÔNG bắt được tên ở định dạng bảng này (chỉ nhận dạng tên sau nhãn "Họ và
+# tên:"/câu văn thường, không phải "STT Tên ICD Số tiền" dạng cột) — khiến
+# hasRequiredTagCorroboration=false oan, trong khi counts[health_001]>=2 (số
+# dòng bệnh nhân nhiều) mới là tín hiệu ĐÚNG cứu các file này trước đây. Đây
+# là lỗ hổng của vn_name_001 (chưa nhận dạng tên dạng bảng), không phải lỗi
+# của gate — sửa đúng chỗ cần sửa vn_name_001 trước, không nên siết
+# health_001 tới mức làm lộ lỗ hổng đó thành regression thật. Giữ nguyên
+# non-strict (không có count>=2 vẫn là lưới an toàn hợp lệ ở đây).
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
-  applies_to_patterns: [pattern_7, pattern_9]
+  applies_to_patterns: [pattern_1, pattern_2, pattern_4, pattern_7, pattern_9, pattern_11]
   required_corroboration_tags: [personal_identifier]
 
 # health_001 vốn là rule SECRET quan trọng (GDPR Điều 9) — chỉ downgrade,
@@ -251,8 +277,29 @@ level_gate:
 # Áp dụng CẢ 2 nhóm cho CẢ 2 pattern (không tách riêng): 1 cẩm nang nhắc
 # "bệnh di truyền" cũng nên được nhận diện là nội dung phổ biến, không chỉ áp
 # cho tên bệnh thông thường.
+#
+# MỞ RỘNG (phát hiện qua phân tích dữ liệu thật): pattern_1/2/3/4/8 (bệnh án,
+# phiếu khám sức khỏe, chẩn đoán có label, kết quả xét nghiệm, khám nghiệm tử
+# thi) cũng là nguồn over-classify PUBLIC lớn — health_001 là rule thứ 2 gây
+# FP nhiều nhất ruleset (~727 lần là "thủ phạm", đối chiếu qua rawdata/), chủ
+# yếu từ tờ rơi/bài tuyên truyền sức khỏe cộng đồng PUBLIC nhắc "bệnh án"/
+# "chẩn đoán" mang tính GIÁO DỤC CHUNG (VD "Hướng dẫn đọc hiểu chẩn đoán:
+# ...", infographic "Những điều cần biết về khám lâm sàng định kỳ"), không
+# phải hồ sơ bệnh nhân cụ thể. Dùng generic_content_signals (đã có sẵn ở
+# trên) — CHỈ mở rộng negation_filter.applies_to_patterns, KHÔNG đổi
+# level_gate.applies_to_patterns (giữ nguyên hành vi true-positive bình
+# thường của các pattern này khi không có tín hiệu giáo dục — negation_filter
+# hoạt động độc lập với level_gate, chỉ set thẳng level về fallback khi
+# trigger, không cần pattern nằm trong phạm vi gate).
 negation_filter:
-  window_chars: 30
+  # window_chars nới 30→60: xác nhận qua test trực tiếp rằng 30 byte (~15-20
+  # ký tự tiếng Việt có dấu) quá hẹp — trigger "Những điều cần biết" đứng đầu
+  # câu không lọt vào window của match "hồ sơ bệnh án" đứng cuối CÙNG câu dù
+  # cùng 1 câu văn (VD "Hướng dẫn đọc hiểu chẩn đoán: Những điều cần biết khi
+  # xem hồ sơ bệnh án của bạn."). 60 khớp với window đã dùng cho các rule
+  # negation_filter khác trong ruleset (watermark_001, fraud_transaction_
+  # flag_001...).
+  window_chars: 60
   trigger_words:
     - không có tiền sử
     - không mắc
@@ -270,4 +317,4 @@ negation_filter:
     - những điều cần biết
     - dấu hiệu nhận biết
   action: downgrade_to_gate
-  applies_to_patterns: [pattern_7, pattern_9]
+  applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4, pattern_7, pattern_8, pattern_9]

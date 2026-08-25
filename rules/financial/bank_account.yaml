@@ -105,6 +105,13 @@ false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
 
+# proximity_window: rule generic nhất nhóm financial — ưu tiên cao nhất cho
+# siết proximity. max_chars=50 (hẹp nhất trong nhóm, cùng mức social_insurance).
+proximity_window:
+  max_chars: 50
+  same_sentence_required: true
+  keyword_scope: primary
+
 # ĐÃ GỠ block escalation (từng nâng SECRET khi thấy "sao kê"/"số dư"/
 # "statement"/"balance" gần số TK): đây là từ vựng ngân hàng THÔNG THƯỜNG,
 # không phải bằng chứng escalation — tài liệu "Kế hoạch xây dựng bộ dữ liệu"
@@ -129,7 +136,17 @@ volume_escalation:
 # với BIN/prefix (vẫn chỉ là "prefix + N số", dễ trùng số điện thoại/mã khác
 # bắt đầu cùng tiền tố). Rule duy nhất trong nhóm số-chung-chung không có
 # exempt_patterns.
+#
+# min_confidence_bypass=0.90: PHÁT HIỆN REGRESSION THẬT qua eval_confusion.go
+# (--domain finance_banking) — fin_conf_00026.docx (ground truth CONFIDENTIAL)
+# có match "440037110392" conf=0.92 (label "số tài khoản" rõ ràng ngay cạnh,
+# đúng định dạng NH VN) nhưng bị gate hạ sai xuống INTERNAL vì chỉ xuất hiện
+# 1 lần, không có rule khác ≥ CONFIDENTIAL corroborate. Cùng loại lỗi đã sửa
+# ở watermark_001/internal_ip_001. Cả 4 pattern đều có thể đạt ≥0.90 khi có
+# đủ keyword ngữ cảnh mạnh (base×weight + boost tối đa 0.30) — bypass không
+# vô hiệu hóa gate, chỉ cứu đúng trường hợp có bằng chứng ngữ cảnh rất mạnh.
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
   applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
+  min_confidence_bypass: 0.90
