@@ -258,7 +258,7 @@ false_positive_reduction:
 # non-strict (không có count>=2 vẫn là lưới an toàn hợp lệ ở đây).
 level_gate:
   require_corroboration: true
-  fallback_level: INTERNAL
+  fallback_level: PUBLIC
   applies_to_patterns: [pattern_1, pattern_2, pattern_4, pattern_7, pattern_9, pattern_11]
   required_corroboration_tags: [personal_identifier]
 

@@ -121,7 +121,7 @@ false_positive_reduction:
 # chính là dấu hiệu "tài liệu điều khoản chung", không phải hồ sơ claim thật.
 level_gate:
   require_corroboration: true
-  fallback_level: INTERNAL
+  fallback_level: PUBLIC
   required_corroboration_tags: [health]
   # strict_tags_only=true BẮT BUỘC: xác nhận qua test trực tiếp rằng nếu
   # không loại bỏ, điều kiện "counts>=2" (lặp lại) vẫn là 1 nhánh OR độc lập

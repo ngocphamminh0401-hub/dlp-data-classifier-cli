@@ -123,7 +123,7 @@ false_positive_reduction:
 # lỗi đã sửa cho insurance_context_001).
 level_gate:
   require_corroboration: true
-  fallback_level: INTERNAL
+  fallback_level: PUBLIC
   required_corroboration_tags: [financial_personal]
   strict_tags_only: true
 

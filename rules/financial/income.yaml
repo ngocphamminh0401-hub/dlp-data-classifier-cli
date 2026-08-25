@@ -112,7 +112,7 @@ proximity_window:
 # ground-truth — nhưng nên đo trước khi đổi keyword_logic.
 level_gate:
   require_corroboration: true
-  fallback_level: INTERNAL
+  fallback_level: PUBLIC
   applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
   # ĐÃ THAY min_confidence_bypass=0.92 BẰNG required_corroboration_tags +
   # strict_tags_only: xác nhận qua rule-attribution trên rawdata/ rằng

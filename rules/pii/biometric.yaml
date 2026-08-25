@@ -110,7 +110,7 @@ false_positive_reduction:
 # cùng file vẫn đủ giữ đúng SECRET ở cấp file.
 level_gate:
   require_corroboration: true
-  fallback_level: INTERNAL
+  fallback_level: PUBLIC
   applies_to_patterns: [pattern_1, pattern_3, pattern_4]
 
 negation_filter:
