@@ -88,11 +88,15 @@ func (rk *RuleKeywords) UnmarshalYAML(value *yaml.Node) error {
 }
 
 // KeywordLogic configures confidence scoring for keyword-only rules.
+//
+// ĐÃ XÓA min_primary/confidence_per_keyword/max_confidence (đã khai trong
+// income.yaml, contract.yaml, vn_name.yaml nhưng CHƯA TỪNG được engine đọc
+// — dead field, xác nhận qua grep toàn bộ internal/). Chỉ giữ MinSecondary
+// (đang dùng thật ở classifier.go — gate rule nếu số secondary keyword <
+// ngưỡng, VD income_001 cần BHXH/phiếu lương đi kèm "lương", không chỉ 1
+// từ "lương" đơn lẻ).
 type KeywordLogic struct {
-	MinPrimary           int     `yaml:"min_primary"`
-	MinSecondary         int     `yaml:"min_secondary"`
-	ConfidencePerKeyword float64 `yaml:"confidence_per_keyword"`
-	MaxConfidence        float64 `yaml:"max_confidence"`
+	MinSecondary int `yaml:"min_secondary"`
 }
 
 // FPReduction configures false-positive reduction strategies.
@@ -107,10 +111,15 @@ type KeywordLogic struct {
 // cũ dù có set MinContextWindow (field này TRƯỚC ĐÂY hoàn toàn không được
 // engine đọc — dead field — nên không có rule nào trong ruleset hiện tại lỡ
 // phụ thuộc vào việc nó bị bỏ qua).
+//
+// ĐÃ XÓA luhn_required (đã khai trong credit_card.yaml + 6 rule YAML khác
+// nhưng CHƯA TỪNG được engine đọc — dead field, xác nhận qua grep toàn bộ
+// internal/). Luhn validation THẬT sự chạy qua field khác: mỗi pattern tự
+// khai `validators: [luhn]` (RulePattern.Validators, xem regex.go bước 3
+// "Validators") — độc lập hoàn toàn với field này.
 type FPReduction struct {
 	MinContextWindow    int     `yaml:"min_context_window"`
 	ExcludeIfNoKeywords bool    `yaml:"exclude_if_no_keywords"`
-	LuhnRequired        bool    `yaml:"luhn_required"`
 	CVVExpiryBoost      float64 `yaml:"cvv_expiry_boost"`
 }
 

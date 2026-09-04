@@ -68,11 +68,10 @@ keywords:
     - "báo giá"
     - "quotation"
 
-keyword_logic:
-  min_primary: 1
-  min_secondary: 0
-  confidence_per_keyword: 0.08
-  max_confidence: 0.92
+# keyword_logic (min_primary/confidence_per_keyword/max_confidence): ĐÃ XÓA
+# — dead field, chưa từng được engine đọc (xem internal/engine/rules.go
+# KeywordLogic). min_secondary vốn = 0 (không active, MinSecondary>0 mới
+# gate) nên xóa cả block không đổi hành vi.
 
 # Trước đây pattern KHÔNG yêu cầu keyword nào (context_required=false, không
 # có false_positive_reduction) — mã "PO-123456"/"HD-2024001" tự nó đủ để

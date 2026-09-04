@@ -6,9 +6,10 @@
 # xác nhận đây là quy trình khung, không phải hồ sơ vay thực tế.
 #
 # LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns —
-# đã BỎ vì FPReduction trong engine (internal/engine/rules.go) chỉ có 4
-# field cố định (min_context_window, exclude_if_no_keywords, luhn_required,
-# cvv_expiry_boost), không có exclude_patterns; field lạ bị âm thầm bỏ qua
+# đã BỎ vì FPReduction trong engine (internal/engine/rules.go) chỉ có 3
+# field cố định (min_context_window, exclude_if_no_keywords,
+# cvv_expiry_boost — luhn_required đã bị xóa khỏi struct, dead field chưa
+# từng được đọc), không có exclude_patterns; field lạ bị âm thầm bỏ qua
 # chứ không lỗi. Rủi ro thấp vì rule này chỉ INTERNAL (thấp) — nếu chunk có
 # tên khách hàng vay/số tiền vay cụ thể, "highest-sensitivity-wins" của
 # engine tự lấy mức cao hơn từ rule PII/financial khác (vn_name_001/

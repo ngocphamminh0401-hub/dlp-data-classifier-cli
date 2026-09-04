@@ -96,13 +96,17 @@ keywords:
     - "cardholder"
     - "chủ thẻ"
 
+# luhn_required: ĐÃ XÓA — dead field, chưa từng được engine đọc (xem
+# internal/engine/rules.go FPReduction). Luhn validation THẬT sự chạy qua
+# `validators: [luhn]` khai ở TỪNG pattern phía trên (7 pattern IIN đều có)
+# — độc lập hoàn toàn với field này, không hề bị ảnh hưởng khi xóa.
 false_positive_reduction:
-  luhn_required: true
   cvv_expiry_boost: 0.07
 
-# Đã có luhn_required=true (validator mạnh) nhưng không loại trừ số thẻ test
-# chuẩn ngành — các số này hợp lệ Luhn nên vẫn qua được validator. So khớp SAU
-# khi đã chuẩn hóa (bỏ khoảng trắng/dấu gạch ngang) và SAU khi đã qua Luhn.
+# Luhn (validator mạnh, qua `validators: [luhn]` từng pattern) không loại
+# trừ được số thẻ test chuẩn ngành — các số này hợp lệ Luhn nên vẫn qua được
+# validator. So khớp SAU khi đã chuẩn hóa (bỏ khoảng trắng/dấu gạch ngang) và
+# SAU khi đã qua Luhn.
 #
 # LƯU Ý: danh sách known_test_values cần rà soát định kỳ vì mỗi cổng thanh
 # toán (Stripe, PayPal, VNPay, MoMo...) công bố bộ số test riêng — coi đây là

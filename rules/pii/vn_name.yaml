@@ -40,6 +40,28 @@ patterns:
     confidence: 0.90
     context_required: false
 
+  # Họ tên ở HÀNG DỮ LIỆU DẠNG BẢNG: docx/pdf đưa mỗi ô bảng xuống 1 dòng
+  # riêng, nên tên bệnh nhân/khách hàng trong bảng (VD "STT | Họ và tên |
+  # ...") xuất hiện dưới dạng "1\nPhạm Đình Khánh\n..." — pattern trên vẫn
+  # KHỚP ĐÚNG REGEX (đã verify) nhưng bị loại ở NGƯỠNG CONFIDENCE cuối cùng
+  # (MinConfidence=0.60): base score 0.75*weight 0.70=0.525 đã dưới ngưỡng,
+  # và distanceWeightedBoost (cộng thêm theo khoảng cách tới keyword "họ và
+  # tên") luôn yếu vì header bảng cách xa hàng dữ liệu (nhiều dòng tiêu đề
+  # cột chen giữa) — hàng càng xa header, boost càng yếu, không bao giờ đủ
+  # bù 0.075 còn thiếu. Xác nhận qua health_conf_00093/00307/00382.docx
+  # (healthcare__confidential, dùng debug print trực tiếp trong regex.go).
+  # Giải pháp: coi "số thứ tự đứng riêng 1 dòng + họ tên đứng riêng dòng kế
+  # tiếp" là TÍN HIỆU CẤU TRÚC đủ mạnh để tự đứng, không cần cộng dồn boost
+  # khoảng cách — đặt confidence đủ cao (0.90*0.70=0.63) để base score một
+  # mình đã vượt ngưỡng 0.60, không phụ thuộc keyword ở xa.
+  # [^\S\n]+ (thay \s+) giữa các từ trong tên: chỉ chấp nhận space/tab CÙNG
+  # DÒNG, không cho phép \n — tránh lặp lỗi "tên tự vắt sang dòng/ô kế tiếp"
+  # (\s+ gốc từng khớp "Dương Văn Hải\nSV..." vì \s bao gồm cả \n).
+  - regex: '(?m)^[ \t]*\d{1,3}[ \t]*\r?\n[ \t]*(?:Nguyễn|Trần|Lê|Phạm|Hoàng|Huỳnh|Phan|Vũ|Võ|Đặng|Bùi|Đỗ|Hồ|Ngô|Dương|Lý|Đinh|Trịnh|Đoàn|Lưu|Vương|Cao|Mai|Tô|Châu|Hà|Tăng|Thái|Lâm|Đào|Quách|La|Kiều|Trương|Tiền|Linh|Văn|Thị|Ngọc|Tống|Lương|Mạc|Nghiêm|Thiều)(?:[ \t]+\p{Lu}\p{L}*){1,4}[ \t]*\r?$'
+    description: "Họ tên ở dòng riêng ngay sau số thứ tự (STT) — hàng dữ liệu dạng bảng (docx/pdf)"
+    confidence: 0.90
+    context_required: true
+
 keywords:
   primary:
     - "họ tên"
@@ -81,11 +103,10 @@ keywords:
     - "giám đốc"
     - "trưởng phòng"
 
-keyword_logic:
-  min_primary: 1
-  min_secondary: 0
-  confidence_per_keyword: 0.08
-  max_confidence: 0.92
+# keyword_logic (min_primary/confidence_per_keyword/max_confidence): ĐÃ XÓA
+# — dead field, chưa từng được engine đọc (xem internal/engine/rules.go
+# KeywordLogic). min_secondary vốn = 0 (không active, MinSecondary>0 mới
+# gate) nên xóa cả block không đổi hành vi.
 
 false_positive_reduction:
   exclude_if_no_keywords: true

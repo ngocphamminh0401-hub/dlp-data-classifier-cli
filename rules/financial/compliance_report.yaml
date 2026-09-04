@@ -9,9 +9,10 @@
 #
 # LƯU Ý TRIỂN KHAI: bản gốc có false_positive_reduction.exclude_patterns để
 # nhường cho rule mức cao hơn khi có số TK/dư nợ cụ thể — đã BỎ vì
-# FPReduction trong engine (internal/engine/rules.go) chỉ có 4 field:
-# min_context_window, exclude_if_no_keywords, luhn_required,
-# cvv_expiry_boost — không có exclude_patterns. YAML không lỗi (unknown
+# FPReduction trong engine (internal/engine/rules.go) chỉ có 3 field:
+# min_context_window, exclude_if_no_keywords, cvv_expiry_boost (luhn_required
+# đã bị xóa khỏi struct — dead field, chưa từng được đọc) — không có
+# exclude_patterns. YAML không lỗi (unknown
 # field bị bỏ qua âm thầm) nhưng field đó KHÔNG có tác dụng nếu giữ lại.
 # Không cần lo ngại nhiều: rule này chỉ INTERNAL (thấp), nên dù có lỡ khớp
 # cùng đoạn văn bản với 1 rule CONFIDENTIAL/SECRET khác, "highest-sensitivity

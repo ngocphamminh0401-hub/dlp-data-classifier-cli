@@ -77,11 +77,13 @@ keywords:
     - "hoa hồng"
     - "thưởng doanh số"
 
+# min_primary/confidence_per_keyword/max_confidence: ĐÃ XÓA — dead field,
+# chưa từng được engine đọc (xem internal/engine/rules.go KeywordLogic).
+# min_secondary vẫn giữ, đang dùng thật (classifier.go): gate rule nếu số
+# secondary keyword < 1 — ngăn income_001 khớp văn bản chỉ có "lương" đơn lẻ
+# mà thiếu BHXH/phiếu lương đi kèm.
 keyword_logic:
-  min_primary: 1
   min_secondary: 1
-  confidence_per_keyword: 0.05
-  max_confidence: 0.95
 
 false_positive_reduction:
   min_context_window: 200

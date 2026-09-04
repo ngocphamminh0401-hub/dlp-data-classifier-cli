@@ -12,9 +12,10 @@
 #
 # LƯU Ý TRIỂN KHAI: bản gốc có thêm false_positive_reduction.exclude_patterns
 # để loại trừ đoạn chat đào tạo/quy trình chung — đã BỎ vì FPReduction trong
-# engine (internal/engine/rules.go) chỉ có 4 field: min_context_window,
-# exclude_if_no_keywords, luhn_required, cvv_expiry_boost — không có
-# exclude_patterns. YAML không lỗi (unknown field bị bỏ qua âm thầm) nhưng
+# engine (internal/engine/rules.go) chỉ có 3 field: min_context_window,
+# exclude_if_no_keywords, cvv_expiry_boost (luhn_required đã bị xóa khỏi
+# struct — dead field, chưa từng được đọc) — không có exclude_patterns.
+# YAML không lỗi (unknown field bị bỏ qua âm thầm) nhưng
 # field đó sẽ KHÔNG có tác dụng gì nếu giữ lại. level_gate bên dưới (bắt
 # buộc có số dư/số TK cụ thể đi kèm mới lên SECRET) đã che được phần lớn
 # trường hợp "chat đào tạo chung" vì nội dung đó thường không có số liệu
