@@ -4,6 +4,7 @@ package scanner
 import (
 	"time"
 
+	"github.com/vnpt/dlp-classifier/internal/engine"
 	"github.com/vnpt/dlp-classifier/internal/models"
 )
 
@@ -68,4 +69,8 @@ type ScanResult struct {
 	Duration    time.Duration `json:"scan_duration_ms"`
 	Matches     []Match       `json:"matches"`
 	Error       string        `json:"error,omitempty"`
+
+	// Telemetry gom số liệu near-miss của toàn file (Pha 1 — Instrumentation),
+	// gộp qua mọi chunk. Không ảnh hưởng Level/LevelName.
+	Telemetry engine.FileScanTelemetry `json:"telemetry"`
 }

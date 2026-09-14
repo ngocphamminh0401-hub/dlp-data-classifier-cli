@@ -38,6 +38,9 @@ type Config struct {
 	RulesDir      string
 	MinConfidence float64
 	AuditLogPath  string
+	// TelemetryLogPath: nếu != "", CLI ghi FileScanTelemetry JSONL ra đây
+	// (Pha 1). Scanner tự nó không dùng field này — chỉ mang qua cho tầng gọi.
+	TelemetryLogPath string
 }
 
 // DefaultConfig trả về cấu hình mặc định.
@@ -332,6 +335,7 @@ func (s *Scanner) scanChunkWithCarry(chunk []byte, streamOffset int64, carry []b
 	baseOffset := streamOffset - int64(len(carry))
 	out, err := s.scanWithChunkTimeout(combined, baseOffset)
 	if err != nil {
+		result.Telemetry.ChunkErrorCount++
 		return streamOffset, carry, false, err
 	}
 	s.applyScanOutput(out, result, dedup)
@@ -352,6 +356,7 @@ func (s *Scanner) scanBuffer(decoded []byte, result *ScanResult, deadline time.T
 	if len(decoded) <= s.cfg.ChunkSize {
 		out, err := s.scanWithChunkTimeout(decoded, 0)
 		if err != nil {
+			result.Telemetry.ChunkErrorCount++
 			return err
 		}
 		s.applyScanOutput(out, result, nil)
@@ -440,6 +445,8 @@ func expired(deadline time.Time) bool {
 }
 
 func (s *Scanner) applyScanOutput(out engine.ScanOutput, result *ScanResult, dedup map[string]struct{}) {
+	result.Telemetry.Merge(out.Telemetry)
+
 	if lvl := mapLevel(out.FinalLevel); lvl > result.Level {
 		result.Level = lvl
 		result.LevelName = lvl.String()
@@ -470,6 +477,8 @@ func (s *Scanner) applyScanOutput(out engine.ScanOutput, result *ScanResult, ded
 			Value:      m.Value,
 			Context:    m.Context,
 			Confidence: m.Confidence,
+			Level:      int(m.Level),
+			Validated:  m.Validated,
 		}
 		result.Matches[len(result.Matches)-1] = internalMatch.ToPublic()
 

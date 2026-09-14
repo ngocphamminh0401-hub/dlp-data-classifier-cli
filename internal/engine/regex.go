@@ -75,7 +75,7 @@ var (
 // của mỗi match để kết quả phản ánh vị trí tuyệt đối trong file.
 //
 // Hàm này là hot path; gọi hàng triệu lần → không allocate nếu không có match.
-func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, opts matchOpts) []RuleMatch {
+func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, opts matchOpts, tel *FileScanTelemetry) []RuleMatch {
 	var out []RuleMatch
 
 	// placeholder_exclusion.doc_context_discount: tính 1 LẦN cho cả chunk (không
@@ -97,6 +97,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 		// tìm thấy keyword nào cho rule này → bỏ qua toàn bộ pattern.
 		// Tiết kiệm CPU: không chạy regex khi rõ ràng sẽ là false positive.
 		if pat.ContextRequired && !hits.HasRule(rule.ID) {
+			tel.ContextRequiredSkipCount++
 			continue
 		}
 
@@ -140,6 +141,13 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			if len(pat.Validators) > 0 {
 				passed, enforced := applyValidators(matchBytes, pat.Validators)
 				if enforced && !passed {
+					tel.ValidatorFailCount++
+					// S3 near-miss: định dạng PII đúng chỗ, checksum sai NHƯNG có
+					// từ vựng PII cấu trúc gần đó → nghi số thật bị OCR/nhập sai,
+					// không phải số random.
+					if containsSensitiveContextNear(chunk, loc[0], loc[1], 400) {
+						tel.ValidatorFailInContextCount++
+					}
 					continue // false positive đã bị lọc bởi thuật toán (vd: số thẻ sai Luhn)
 				}
 				if enforced && passed {
@@ -192,12 +200,15 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			if rule.FPReduction.ExcludeIfNoKeywords {
 				if rule.ProximityWindow.MaxChars > 0 {
 					if !hasKeywordWithinWindow(hits, rule.ID, start, end, rule.FPReduction.MinContextWindow) {
+						tel.ProximityRejectCount++
 						continue
 					}
 					if !keywordSatisfiesProximity(chunk, hits, rule.ID, start, end, rule.ProximityWindow) {
+						tel.ProximityRejectCount++
 						continue
 					}
 				} else if !hits.HasRule(rule.ID) {
+					tel.ProximityRejectCount++
 					continue
 				}
 			}
@@ -238,7 +249,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			// Nếu phát hiện từ khóa escalation gần match → nâng cấp độ.
 			// Ví dụ: "hợp đồng" + "quốc phòng" → PUBLIC → SECRET
 			if rule.Escalation.EscalateTo != "" && len(rule.Escalation.Keywords) > 0 {
-				level = checkEscalation(chunk, loc[0], loc[1], rule, level)
+				level = checkEscalation(chunk, loc[0], loc[1], rule, level, tel)
 			}
 
 			// ── 8.5 Negation filter ────────────────────────────────────────
@@ -252,8 +263,10 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				negationAppliesToPattern(rule.NegationFilter.AppliesToPatterns, patIdx) &&
 				negationTriggered(chunk, loc[0], loc[1], rule.NegationFilter.WindowChars, rule.NegationFilter.TriggerWords) {
 				if rule.NegationFilter.Action == "suppress" {
+					tel.NegationSuppressCount++
 					continue // loại bỏ match hoàn toàn — không góp phần vào bất kỳ level nào
 				}
+				tel.NegationDowngradeCount++
 				level = rule.LevelGate.ParsedFallbackLevel // "downgrade_to_gate"
 			}
 
@@ -1188,7 +1201,11 @@ func negationTriggered(chunk []byte, start, end, windowChars int, triggerWords [
 
 // checkEscalation kiểm tra xem có keyword escalation nào trong ±300 byte
 // quanh match không; nếu có, nâng cấp level lên rule.Escalation.EscalateTo.
-func checkEscalation(chunk []byte, start, end int, rule *Rule, current ClassificationLevel) ClassificationLevel {
+//
+// S1 near-miss: nếu KHÔNG escalate được nhưng escalation keyword có mặt trong
+// "penumbra" 300–900 byte (quá xa để trigger), cộng grade = (900−d)/600 vào
+// tel.EscalationNearMissScore — "văn bản có từ vựng leo thang, chỉ đặt sai chỗ".
+func checkEscalation(chunk []byte, start, end int, rule *Rule, current ClassificationLevel, tel *FileScanTelemetry) ClassificationLevel {
 	ctxStart := maxI(0, start-300)
 	ctxEnd := minI(len(chunk), end+300)
 	window := bytes.ToLower(chunk[ctxStart:ctxEnd])
@@ -1198,6 +1215,30 @@ func checkEscalation(chunk []byte, start, end int, rule *Rule, current Classific
 			escalated := ParseLevel(rule.Escalation.EscalateTo)
 			if escalated > current {
 				return escalated
+			}
+		}
+	}
+
+	// ── S1: escalation near-miss trong penumbra ──
+	if tel != nil && ParseLevel(rule.Escalation.EscalateTo) > current {
+		pStart := maxI(0, start-900)
+		pEnd := minI(len(chunk), end+900)
+		penumbra := bytes.ToLower(chunk[pStart:pEnd])
+		for _, kw := range rule.Escalation.Keywords {
+			idx := bytes.Index(penumbra, bytes.ToLower([]byte(kw)))
+			if idx < 0 {
+				continue
+			}
+			absPos := pStart + idx
+			d := start - absPos
+			if absPos >= end {
+				d = absPos - end
+			}
+			if d < 300 {
+				d = 300 // đã nằm trong ±300 mà không match kw đầy đủ ở trên → coi như sát ngưỡng
+			}
+			if grade := float64(900-d) / 600.0; grade > 0 {
+				tel.EscalationNearMissScore += grade
 			}
 		}
 	}

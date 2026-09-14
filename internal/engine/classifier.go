@@ -198,6 +198,10 @@ type ScanOutput struct {
 	// Chỉ có giá trị khi compound rule có trường violation_type != "".
 	// Dùng để audit log và phân loại vi phạm theo chuẩn (PCI-DSS, HIPAA, ...).
 	CompoundViolations []CompoundViolation
+
+	// Telemetry đếm các sự kiện near-miss của chunk này (Pha 1 — Instrumentation).
+	// Không ảnh hưởng FinalLevel/Matches. Scanner gộp qua các chunk bằng Merge.
+	Telemetry FileScanTelemetry
 }
 
 // ─── Scan ─────────────────────────────────────────────────────────────────────
@@ -226,6 +230,8 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 		contextWindow: e.cfg.ContextWindow,
 	}
 
+	tel := FileScanTelemetry{ChunkCount: 1, TotalBytes: int64(len(chunk))}
+
 	var allMatches []RuleMatch
 	finalLevel := Public
 	fastFailed := false
@@ -235,6 +241,12 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 		// Tối ưu: bỏ qua rule nếu tất cả pattern đều context_required
 		// mà không có keyword nào cho rule này trong chunk.
 		if !hits.HasRule(rule.ID) && allPatternsContextRequired(rule) {
+			// CỐ Ý KHÔNG đếm vào ContextRequiredSkipCount: rule KHÔNG có keyword
+			// nào trong chunk = rule hoàn toàn không liên quan file này, không
+			// phải "near-miss" (engine chưa từng nghi ngờ). Nếu đếm ở đây thì
+			// mọi file đều có count ~50 (số rule all-context-required) → feature
+			// mất ý nghĩa. Chỉ đếm nhánh context_required TRONG matchAllPatterns
+			// (rule có keyword ở đâu đó nhưng pattern cụ thể vẫn thiếu context).
 			continue
 		}
 
@@ -255,7 +267,7 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 			}
 		}
 
-		ruleMatches := matchAllPatterns(chunk, rule, hits, baseOffset, opts)
+		ruleMatches := matchAllPatterns(chunk, rule, hits, baseOffset, opts, &tel)
 		if len(ruleMatches) == 0 {
 			continue
 		}
@@ -288,7 +300,7 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 	// Bỏ qua khi fastFailed=true: scan đã dừng sớm, allMatches không đầy đủ nên
 	// không đủ dữ liệu để đánh giá corroboration đáng tin cậy.
 	if !fastFailed && len(e.levelGateRules) > 0 && len(allMatches) > 0 {
-		finalLevel = e.applyLevelGate(allMatches)
+		finalLevel = e.applyLevelGate(allMatches, &tel)
 	}
 
 	// ── Step 5: Entropy check ─────────────────────────────────────────────
@@ -312,11 +324,114 @@ func (e *Engine) Scan(chunk []byte, baseOffset int64) ScanOutput {
 		finalLevel, compoundViolations = e.applyCompoundRules(chunk, allMatches, finalLevel)
 	}
 
+	// ── Telemetry (Pha 1): các feature không có nhánh continue sẵn ─────────
+	// Tính SAU khi đã có allMatches — thuần đọc, không đổi finalLevel/matches.
+	if containsAnyKeyword(chunk, docContextProbeKeywords) {
+		tel.DocContextDiscountCount++
+	}
+	tel.UnstructuredNumericHits += countUnstructuredNumericHits(chunk, allMatches, baseOffset)
+	matchedRules := make(map[string]struct{}, len(allMatches))
+	for _, m := range allMatches {
+		matchedRules[m.RuleID] = struct{}{}
+	}
+	for ruleID, kwHits := range hits {
+		if len(kwHits) == 0 {
+			continue
+		}
+		if _, ok := matchedRules[ruleID]; ok {
+			continue
+		}
+		tel.addKeywordHitNoMatch(ruleID, len(kwHits))
+		for _, h := range kwHits {
+			if h.Primary {
+				tel.KeywordHitNoMatchPrimaryRuleCount++
+				break
+			}
+		}
+	}
+
+	// ── S2: compound rule gần thỏa (N−1/N điều kiện) ──────────────────────
+	// Chỉ xét compound rule LẼ RA sẽ nâng cấp (ResultLevel > finalLevel).
+	// grade: thiếu đúng 1 tag → (N−1)/N ; đủ tag nhưng 1 điều kiện dưới
+	// min_component_level đúng 1 cấp → 0.5. Thuần đọc — không đổi finalLevel.
+	if len(e.compound) > 0 && len(allMatches) > 0 {
+		nmTags := buildTagSet(allMatches, e.rulesByID)
+		nmTagLevels := buildTagLevelMap(allMatches)
+		for _, cr := range e.compound {
+			if cr.ResultLevel <= finalLevel {
+				continue
+			}
+			if len(cr.ContextConditions) > 0 && !compoundSatisfied(cr.ContextConditions, nmTags) {
+				continue
+			}
+			n := len(cr.Conditions)
+			if n == 0 {
+				continue
+			}
+			// "Bằng chứng đã có" đủ đáng kể: đếm số điều kiện thỏa ở level
+			// ≥ INTERNAL (loại tag rác PUBLIC) và ≥ CONFIDENTIAL (bằng chứng mạnh).
+			// grade near-miss được scale theo tỷ lệ bằng chứng mạnh.
+			minEvid := cr.MinComponentLevel
+			if minEvid == 0 {
+				minEvid = Confidential
+			}
+			sat, satStrong := 0, 0
+			for _, c := range cr.Conditions {
+				if !nmTags[c] {
+					continue
+				}
+				if nmTagLevels[c] < Internal {
+					continue // tag chỉ ở mức PUBLIC → coi như chưa thỏa (rác)
+				}
+				sat++
+				if nmTagLevels[c] >= minEvid {
+					satStrong++
+				}
+			}
+			switch {
+			case sat == n-1:
+				// grade: (N−1)/N, giảm một nửa nếu KHÔNG có điều kiện thỏa nào mạnh.
+				g := float64(sat) / float64(n)
+				if satStrong == 0 {
+					g *= 0.5
+				}
+				tel.CompoundNearMissScore += g
+			case sat == n && cr.MinComponentLevel > 0:
+				minLvl := ClassificationLevel(1 << 30)
+				for _, c := range cr.Conditions {
+					if lv := nmTagLevels[c]; lv < minLvl {
+						minLvl = lv
+					}
+				}
+				if minLvl == cr.MinComponentLevel-1 {
+					tel.CompoundNearMissScore += 0.5
+				}
+			}
+		}
+	}
+
+	// ── HR blind-spot probe ──────────────────────────────────────────────
+	// Từ vựng hồ sơ HR nhạy cảm có mặt NHƯNG không rule nào category="hr"
+	// engaged → rule HR thiếu coverage (báo cáo §5 mục 5).
+	if containsAnyKeyword(chunk, hrSensitiveLexicon) {
+		hrRuleMatched := false
+		for _, m := range allMatches {
+			if m.Category == "hr" {
+				hrRuleMatched = true
+				break
+			}
+		}
+		if !hrRuleMatched {
+			tel.HrSensitiveLexiconNoRuleCount++
+		}
+	}
+
 	return ScanOutput{
 		Matches:            allMatches,
 		FinalLevel:         finalLevel,
 		FastFailed:         fastFailed,
 		CompoundViolations: compoundViolations,
+		Telemetry:          tel,
 	}
 }
 
@@ -403,7 +518,7 @@ func (e *Engine) ApplyVolumeEscalation(counts map[string]int, current Classifica
 // trên TOÀN BỘ match của RuleID (không phân biệt pattern nào exempt) — 1 match
 // từ pattern exempt (VD MRZ) vẫn là bằng chứng corroboration hợp lệ cho match
 // từ pattern bị gate (VD dãy số trần) của CÙNG rule.
-func (e *Engine) applyLevelGate(matches []RuleMatch) ClassificationLevel {
+func (e *Engine) applyLevelGate(matches []RuleMatch, tel *FileScanTelemetry) ClassificationLevel {
 	counts := make(map[string]int, len(matches))
 	validatedByRule := make(map[string]bool, len(matches))
 	strongRuleIDs := make(map[string]bool, len(matches))
@@ -491,6 +606,7 @@ func (e *Engine) applyLevelGate(matches []RuleMatch) ClassificationLevel {
 			}
 			if !corroborated && m.Level > rule.LevelGate.ParsedFallbackLevel {
 				m.Level = rule.LevelGate.ParsedFallbackLevel
+				tel.LevelGateDowngradeCount++
 			}
 		}
 		if m.Level > finalLevel {

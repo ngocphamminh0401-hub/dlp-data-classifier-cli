@@ -20,6 +20,7 @@ rules:
 output:
   default_format: "stdout"
   audit_log: ""
+  telemetry_log: ""  # Pha 1: JSONL số liệu near-miss theo từng file (rỗng = tắt)
   audit_rotation_size: "100MB"
   audit_rotation_interval: "24h"
 

@@ -28,21 +28,22 @@ import (
 const version = "1.0.0"
 
 type cliOptions struct {
-	configPath    string
-	path          string
-	rulesDir      string
-	outputFormat  string
-	outputPath    string
-	workers       int
-	levelFilter   string
-	dryRun        bool
-	maxFileSize   string
-	minConfidence float64
-	recursive     bool
-	auditLogPath  string
-	iterations    int
-	updateSource  string
-	updateTarget  string
+	configPath       string
+	path             string
+	rulesDir         string
+	outputFormat     string
+	outputPath       string
+	workers          int
+	levelFilter      string
+	dryRun           bool
+	maxFileSize      string
+	minConfidence    float64
+	recursive        bool
+	auditLogPath     string
+	telemetryLogPath string
+	iterations       int
+	updateSource     string
+	updateTarget     string
 }
 
 func newRootCmd() *cobra.Command {
@@ -91,6 +92,7 @@ func newScanCmd(opts *cliOptions) *cobra.Command {
 	cmd.Flags().Float64Var(&opts.minConfidence, "min-confidence", 0, "Minimum confidence")
 	cmd.Flags().BoolVar(&opts.recursive, "recursive", true, "Scan directories recursively")
 	cmd.Flags().StringVar(&opts.auditLogPath, "audit-log", "", "JSONL audit log path")
+	cmd.Flags().StringVar(&opts.telemetryLogPath, "telemetry-log", "", "JSONL near-miss telemetry log path (Pha 1)")
 	_ = cmd.MarkFlagRequired("path")
 	return cmd
 }
@@ -218,6 +220,7 @@ func runScanWithPaths(opts *cliOptions, paths <-chan string, totalHint int, out 
 	cfg.MaxWorkers = pickInt(opts.workers, viper.GetInt("scanner.workers"), cfg.MaxWorkers)
 	cfg.RulesDir = pickString(opts.rulesDir, viper.GetString("rules.dir"), cfg.RulesDir)
 	cfg.AuditLogPath = pickString(opts.auditLogPath, viper.GetString("output.audit_log"), cfg.AuditLogPath)
+	cfg.TelemetryLogPath = pickString(opts.telemetryLogPath, viper.GetString("output.telemetry_log"), cfg.TelemetryLogPath)
 	cfg.MinConfidence = pickFloat(opts.minConfidence, viper.GetFloat64("rules.min_confidence"), cfg.MinConfidence)
 
 	maxSizeStr := pickString(opts.maxFileSize, viper.GetString("scanner.max_file_size"), "50MB")
@@ -271,6 +274,16 @@ func runScanWithPaths(opts *cliOptions, paths <-chan string, totalHint int, out 
 		}
 		audit = al
 		defer audit.Close()
+	}
+
+	var telemetry *output.TelemetryLogger
+	if cfg.TelemetryLogPath != "" {
+		tl, err := output.NewTelemetryLogger(cfg.TelemetryLogPath)
+		if err != nil {
+			return 0, err
+		}
+		telemetry = tl
+		defer telemetry.Close()
 	}
 
 	csvW := csv.NewWriter(out)
@@ -333,6 +346,14 @@ func runScanWithPaths(opts *cliOptions, paths <-chan string, totalHint int, out 
 					Confidence: m.Confidence,
 				})
 			}
+		}
+		if telemetry != nil {
+			_ = telemetry.Write(output.TelemetryRecord{
+				Path:              r.Path,
+				Level:             r.LevelName,
+				Status:            r.StatusCode.String(),
+				FileScanTelemetry: r.Telemetry,
+			})
 		}
 		levelCounts[r.LevelName]++
 	}
