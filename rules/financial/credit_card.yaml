@@ -19,7 +19,7 @@ category: financial
 level: SECRET
 weight: 0.95
 priority: 100
-tags: [financial, credit_card, payment_card, pci_dss]
+tags: [financial, credit_card, payment_card, pci_dss, financial_personal]
 enabled: true
 
 patterns:
@@ -96,6 +96,25 @@ keywords:
     - "cardholder"
     - "chủ thẻ"
 
+# luhn_required: ĐÃ XÓA — dead field, chưa từng được engine đọc (xem
+# internal/engine/rules.go FPReduction). Luhn validation THẬT sự chạy qua
+# `validators: [luhn]` khai ở TỪNG pattern phía trên (7 pattern IIN đều có)
+# — độc lập hoàn toàn với field này, không hề bị ảnh hưởng khi xóa.
 false_positive_reduction:
-  luhn_required: true
   cvv_expiry_boost: 0.07
+
+# Luhn (validator mạnh, qua `validators: [luhn]` từng pattern) không loại
+# trừ được số thẻ test chuẩn ngành — các số này hợp lệ Luhn nên vẫn qua được
+# validator. So khớp SAU khi đã chuẩn hóa (bỏ khoảng trắng/dấu gạch ngang) và
+# SAU khi đã qua Luhn.
+#
+# LƯU Ý: danh sách known_test_values cần rà soát định kỳ vì mỗi cổng thanh
+# toán (Stripe, PayPal, VNPay, MoMo...) công bố bộ số test riêng — coi đây là
+# danh sách sống (living list), không cố định một lần.
+placeholder_exclusion:
+  known_test_values:
+    - "4111111111111111" # Visa test number chuẩn (công khai rộng rãi bởi các cổng thanh toán)
+    - "4012888888881881"
+    - "5555555555554444" # Mastercard test number
+    - "378282246310005" # Amex test number
+    - "6011111111111117" # Discover test number

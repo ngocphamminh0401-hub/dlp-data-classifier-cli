@@ -13,7 +13,7 @@ category: pii
 level: SECRET
 weight: 0.90
 priority: 85
-tags: [pii, health, medical_record, sensitive_pii, ndctn13]
+tags: [pii, health, medical_record, sensitive_pii, ndctn13, pii_strong]
 enabled: true
 
 # Theo tài liệu "Bộ rule kết hợp Regex" (Phần 2): chỉ nhóm HEALTH_RESTRICTED
@@ -57,8 +57,22 @@ patterns:
     override_level: CONFIDENTIAL
 
   # Chẩn đoán bệnh — với label rõ ràng (HEALTH_GENERAL)
-  - regex: '(?i)(?:chẩn\s*đoán|diagnosis|kết\s*luận\s*khám|kết\s*quả\s*khám)\s*[:=]'
-    description: "Chẩn đoán / Kết luận khám bệnh (có label)"
+  # MỞ RỘNG modifier giữa "chẩn đoán" và dấu ":": xác nhận qua rà soát 25
+  # file healthcare__confidential thật rằng "Chẩn đoán:" trần trụi hiếm gặp
+  # — biến thể phổ biến hơn nhiều: "Chẩn đoán sơ bộ:" (5/25), "Chẩn đoán xác
+  # định:" (3/25), "Chẩn đoán y khoa:" (2/25), "Chẩn đoán (ICD-10):", "Chẩn
+  # đoán ra viện:", "Chẩn đoán ban đầu:", "Chẩn đoán theo chỉ định:" — không
+  # cái nào khớp regex cũ (chỉ chấp nhận colon NGAY SAU "chẩn đoán"), khiến
+  # health_001 bỏ sót hoàn toàn các phiếu xét nghiệm/bệnh án dùng biến thể
+  # này (VD health_conf_00106.docx — INTERNAL thay vì CONFIDENTIAL đúng).
+  # Dùng WHITELIST modifier cụ thể (không phải khớp "bất kỳ từ nào trước
+  # dấu :") vì RE2 không có lookahead để loại trừ case cần tránh: "Khoa
+  # Chẩn đoán hình ảnh" (tên khoa/phòng ban, không phải nhãn chẩn đoán bệnh
+  # nhân) — nếu dùng ".{0,20}[:=]" chung chung sẽ vô tình khớp nếu khoa này
+  # từng xuất hiện kèm dấu ":" ở đâu đó. Whitelist chỉ liệt kê đúng các biến
+  # thể đã xác nhận qua dữ liệu thật, không bao gồm "hình ảnh".
+  - regex: '(?i)(?:chẩn\s*đoán(?:\s*(?:sơ\s*bộ|xác\s*định|ban\s*đầu|ra\s*viện|y\s*khoa|theo\s*chỉ\s*định|\(?\s*ICD[\-\s]?10\s*\)?))?|diagnosis|kết\s*luận\s*khám|kết\s*quả\s*khám)\s*[:=]'
+    description: "Chẩn đoán / Kết luận khám bệnh (có label, gồm biến thể sơ bộ/xác định/ICD-10/...)"
     confidence: 0.90
     context_required: false
     override_level: CONFIDENTIAL
@@ -160,6 +174,43 @@ patterns:
     context_required: true
     override_level: CONFIDENTIAL
 
+  # pattern_12 — Bảng thanh toán/quyết toán chi phí khám chữa bệnh BHYT —
+  # tiêu đề văn bản đặc trưng, không dùng nhãn "bệnh án"/"chẩn đoán:"/"khám
+  # lâm sàng" nên 11 pattern trên đều bỏ sót hoàn toàn (VD health_conf_00093/
+  # 00307/00382.docx — PUBLIC thay vì CONFIDENTIAL đúng, xác nhận qua debug
+  # scan trực tiếp: không pattern nào khớp). Đây là bảng LIỆT KÊ BỆNH NHÂN
+  # THẬT (tên, số thẻ BHYT, ngày vào/ra viện) do cơ sở khám chữa bệnh gửi cơ
+  # quan BHXH — khác hẳn "DANH MỤC KỸ THUẬT, DỊCH VỤ KHÁM CHỮA BỆNH ĐƯỢC QUỸ
+  # BHYT CHI TRẢ" (bảng giá dịch vụ công khai, PUBLIC, không có "thanh toán/
+  # quyết toán chi phí khám" — xác nhận qua đối chiếu health_pub_00008.docx,
+  # tiêu đề khác hẳn) — anchor "thanh toán/quyết toán CHI PHÍ KHÁM ... bảo
+  # hiểm y tế" an toàn để phân biệt 2 loại bảng.
+  # ĐẶT Ở CUỐI danh sách (không chèn giữa): applies_to_patterns bên dưới
+  # tham chiếu theo VỊ TRÍ (pattern_N = vị trí N), chèn giữa sẽ làm lệch số
+  # của mọi pattern phía sau.
+  # [\s\S]{0,60} (thay [^\n]{0,60}): xác nhận qua health_conf_00093.pdf rằng
+  # PDF wrap dòng theo bề rộng trang khiến "CHỮA" và "BỆNH BẢO HIỂM Y TẾ" bị
+  # tách bởi \n giữa chừng cụm ("...CHI PHÍ KHÁM BỆNH, CHỮA\nBỆNH BẢO HIỂM Y
+  # TẾ") — [^\n] chặn regex bắc qua dòng nên bỏ sót toàn bộ 3 file .pdf
+  # (00093/00307/00382), trong khi .docx (không wrap theo bề rộng) vẫn khớp
+  # bình thường. Đổi sang [\s\S] để chấp nhận cả newline do PDF ngắt dòng.
+  - regex: '(?i)(?:thanh\s*toán|quyết\s*toán)(?:\s*/\s*(?:thanh\s*toán|quyết\s*toán))?\s*chi\s*phí\s*khám[\s\S]{0,60}bảo\s*hiểm\s*y\s*tế'
+    description: "Bảng tổng hợp thanh toán/quyết toán chi phí khám chữa bệnh BHYT"
+    confidence: 0.85
+    context_required: false
+    override_level: CONFIDENTIAL
+
+  # pattern_13 — Phiếu kết quả xét nghiệm — TIÊU ĐỀ văn bản (không có dấu
+  # ":" theo sau, khác pattern_4 vốn chỉ nhận dạng "kết quả xét nghiệm:" có
+  # label). Xác nhận qua health_conf_00106.docx (ground truth CONFIDENTIAL):
+  # tiêu đề "PHIẾU KẾT QUẢ XÉT NGHIỆM HUYẾT HỌC VÀ SINH HÓA" không có ":" nên
+  # pattern_4 bỏ sót — chỉ vn_name_001 (INTERNAL) khớp, sai mức.
+  - regex: '(?i)phiếu\s*kết\s*quả\s*xét\s*nghiệm'
+    description: "Phiếu kết quả xét nghiệm (tiêu đề văn bản, không cần label ':')"
+    confidence: 0.85
+    context_required: false
+    override_level: CONFIDENTIAL
+
 keywords:
   primary:
     - "bệnh án"
@@ -208,3 +259,132 @@ keywords:
 false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
+
+# pattern_7 ("bệnh di truyền", override CONFIDENTIAL) tự nhận "không phân
+# biệt phủ định" — vẫn khớp câu hỏi sàng lọc âm tính chuẩn trong bệnh án
+# ("Tiền sử gia đình: Không có ai mắc... bệnh di truyền"). Gate riêng cho
+# pattern này (rule hiện dùng false_positive_reduction.exclude_if_no_keywords
+# chung cho CẢ rule, chưa có gate riêng theo pattern).
+#
+# pattern_9 (tên bệnh thông thường: ung thư, tiểu đường, tim mạch...) THÊM
+# VÀO gate: cẩm nang sức khỏe cộng đồng/tờ rơi/tài liệu đào tạo (chỉ nói về
+# bệnh nói chung, không gắn bệnh nhân cụ thể) vẫn đủ keyword ngữ cảnh (thuốc,
+# điều trị, bác sĩ, xét nghiệm — vốn rất phổ biến) để đạt CONFIDENTIAL —
+# không đúng tinh thần GDPR Điều 9 (chỉ bảo vệ dữ liệu sức khỏe GẮN VỚI 1 cá
+# nhân xác định, không bảo vệ kiến thức y khoa chung).
+#
+# required_corroboration_tags=[personal_identifier]: THAY vì chấp nhận "bất
+# kỳ rule nào khác ≥ CONFIDENTIAL trong chunk" (quá lỏng — 1 tờ rơi có thể có
+# match CONFIDENTIAL không liên quan), chỉ giữ level nếu có bằng chứng CỤ THỂ
+# về định danh cá nhân đi kèm: họ tên (vn_name_001), CCCD (vn_id_001), ngày
+# sinh (dob_001) — 3 rule này đã gắn tag personal_identifier. Không có "mã
+# bệnh nhân" vì codebase chưa có rule riêng cho trường này. Áp dụng cho CẢ
+# pattern_7 (nhất quán: chẩn đoán bệnh di truyền thật cũng nên đi kèm định
+# danh để giữ CONFIDENTIAL, không phải bất kỳ tín hiệu CONFIDENTIAL+ nào khác).
+#
+# MỞ RỘNG sang pattern_1/2/4/11 (bệnh án, phiếu khám/khám lâm sàng, kết quả
+# xét nghiệm có label, mã ICD): phân tích rule-attribution trên rawdata/ cho
+# thấy đây là 4 pattern gây FP PUBLIC lớn nhất còn lại của rule (184/204 file)
+# — khớp BẢNG GIÁ DỊCH VỤ Y TẾ ("Khám lâm sàng tổng quát ... 40.000đ"), LỊCH
+# TIÊM CHỦNG, tin tuyển dụng ("Khoa xét nghiệm:", "Kỹ thuật viên xét
+# nghiệm:"), mã dịch vụ BHYT dạng ICD ("K01.01") — đều là văn bản CÔNG KHAI
+# không gắn bệnh nhân cụ thể, không phải hồ sơ y tế thật. Xác nhận AN TOÀN
+# qua đối chiếu trực tiếp: 9/9 hóa đơn bệnh nhân thật (healthcare__
+# confidential, có "BHYT chi trả"/"Đơn giá" giống bảng giá) đều có
+# personal_identifier đi kèm (tên/CCCD/ngày sinh bệnh nhân) nên KHÔNG bị ảnh
+# hưởng; ngược lại phần lớn file bảng giá/lịch tiêm PUBLIC không có.
+# ĐÃ THỬ strict_tags_only=true RỒI GỠ: giả thuyết "counts[health_001]>=2 là
+# đường vòng qua required_corroboration_tags" đúng cho FP (giảm thêm ~90 file
+# PUBLIC), NHƯNG gây regression 49 file healthcare__confidential thật — xác
+# nhận qua đối chiếu trực tiếp: các bảng dữ liệu bệnh nhân dạng LIST (VD
+# health_conf_00206/00291/00294/00346.docx: "1 Phạm Đình Khánh CH1019... I10
+# - Tăng huyết áp...") có TÊN THẬT ngay trong hàng dữ liệu nhưng vn_name_001
+# KHÔNG bắt được tên ở định dạng bảng này (chỉ nhận dạng tên sau nhãn "Họ và
+# tên:"/câu văn thường, không phải "STT Tên ICD Số tiền" dạng cột) — khiến
+# hasRequiredTagCorroboration=false oan, trong khi counts[health_001]>=2 (số
+# dòng bệnh nhân nhiều) mới là tín hiệu ĐÚNG cứu các file này trước đây. Đây
+# là lỗ hổng của vn_name_001 (chưa nhận dạng tên dạng bảng), không phải lỗi
+# của gate — sửa đúng chỗ cần sửa vn_name_001 trước, không nên siết
+# health_001 tới mức làm lộ lỗ hổng đó thành regression thật. Giữ nguyên
+# non-strict (không có count>=2 vẫn là lưới an toàn hợp lệ ở đây).
+#
+# THÊM pattern_12/pattern_13 (bảng thanh toán BHYT, tiêu đề phiếu xét
+# nghiệm — 2 pattern mới thêm để vá lỗ hổng "không khớp gì cả" trên bảng
+# dữ liệu bệnh nhân thật, xem comment tại 2 pattern đó): cùng nhóm rủi ro
+# với pattern_1/2/4/11 (tiêu đề/nhãn văn bản chung, không tự thân gắn 1
+# bệnh nhân cụ thể) nên gate theo cùng logic. Đã sửa vn_name_001 nhận tên
+# dạng bảng (pattern STT+tên) NÊN các file bảng BHYT thật (health_conf_
+# 00093/00307/00382...) giờ có personal_identifier tag qua chính tên trong
+# bảng — không bị regression như pattern_1/2/4/11 từng gặp trước khi sửa.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+  applies_to_patterns: [pattern_1, pattern_2, pattern_4, pattern_7, pattern_9, pattern_11, pattern_12, pattern_13]
+  required_corroboration_tags: [personal_identifier]
+  # strict_tags_only: BẬT LẠI sau khi vn_name_001 đã nhận tên dạng bảng
+  # (pattern STT+tên) — loại bỏ counts[health_001]>=2 khỏi corroboration,
+  # chỉ còn tag personal_identifier quyết định. AN TOÀN cho .docx (xác nhận
+  # qua eval: health_conf_00206/00291/00294/00346 vẫn CONFIDENTIAL đúng,
+  # giờ qua tag thay vì counts). RỦI RO ĐÃ BIẾT cho .pdf: PDF ngắt cột làm
+  # vỡ tên bệnh nhân giữa các dòng nên vn_name_001 không tag được — các file
+  # .pdf trước đây được counts>=2 cứu (VD health_conf_00206.pdf) SẼ hồi quy
+  # xuống PUBLIC khi bật cờ này. Bật theo yêu cầu, xem đánh giá đo lại ngay
+  # sau khi áp dụng.
+  strict_tags_only: true
+
+# health_001 vốn là rule SECRET quan trọng (GDPR Điều 9) — chỉ downgrade,
+# KHÔNG suppress, để tránh mất recall khi câu phủ định giả (VD "không rõ có
+# phải bệnh di truyền hay không" — vẫn nên giữ 1 phần nghi vấn, không loại
+# hẳn như suppress sẽ làm).
+#
+# 2 nhóm trigger_words gộp chung (Rule chỉ có 1 negation_filter, không phải
+# danh sách riêng theo pattern):
+#   - Phủ định tiền sử bệnh (gốc, cho pattern_7): "không có tiền sử"...
+#   - generic_content_signals (MỚI, cho pattern_9): nội dung mang tính phổ
+#     biến kiến thức/tuyên truyền — "phòng ngừa", "cẩm nang", "tờ rơi"... —
+#     xuất hiện gần tên bệnh thì đây là tài liệu giáo dục, không phải hồ sơ
+#     bệnh nhân cụ thể.
+# Áp dụng CẢ 2 nhóm cho CẢ 2 pattern (không tách riêng): 1 cẩm nang nhắc
+# "bệnh di truyền" cũng nên được nhận diện là nội dung phổ biến, không chỉ áp
+# cho tên bệnh thông thường.
+#
+# MỞ RỘNG (phát hiện qua phân tích dữ liệu thật): pattern_1/2/3/4/8 (bệnh án,
+# phiếu khám sức khỏe, chẩn đoán có label, kết quả xét nghiệm, khám nghiệm tử
+# thi) cũng là nguồn over-classify PUBLIC lớn — health_001 là rule thứ 2 gây
+# FP nhiều nhất ruleset (~727 lần là "thủ phạm", đối chiếu qua rawdata/), chủ
+# yếu từ tờ rơi/bài tuyên truyền sức khỏe cộng đồng PUBLIC nhắc "bệnh án"/
+# "chẩn đoán" mang tính GIÁO DỤC CHUNG (VD "Hướng dẫn đọc hiểu chẩn đoán:
+# ...", infographic "Những điều cần biết về khám lâm sàng định kỳ"), không
+# phải hồ sơ bệnh nhân cụ thể. Dùng generic_content_signals (đã có sẵn ở
+# trên) — CHỈ mở rộng negation_filter.applies_to_patterns, KHÔNG đổi
+# level_gate.applies_to_patterns (giữ nguyên hành vi true-positive bình
+# thường của các pattern này khi không có tín hiệu giáo dục — negation_filter
+# hoạt động độc lập với level_gate, chỉ set thẳng level về fallback khi
+# trigger, không cần pattern nằm trong phạm vi gate).
+negation_filter:
+  # window_chars nới 30→60: xác nhận qua test trực tiếp rằng 30 byte (~15-20
+  # ký tự tiếng Việt có dấu) quá hẹp — trigger "Những điều cần biết" đứng đầu
+  # câu không lọt vào window của match "hồ sơ bệnh án" đứng cuối CÙNG câu dù
+  # cùng 1 câu văn (VD "Hướng dẫn đọc hiểu chẩn đoán: Những điều cần biết khi
+  # xem hồ sơ bệnh án của bạn."). 60 khớp với window đã dùng cho các rule
+  # negation_filter khác trong ruleset (watermark_001, fraud_transaction_
+  # flag_001...).
+  window_chars: 60
+  trigger_words:
+    - không có tiền sử
+    - không mắc
+    - không ghi nhận
+    - tiền sử gia đình không có
+    - phòng ngừa
+    - cẩm nang
+    - kiến thức
+    - tuyên truyền
+    - khuyến cáo
+    - tờ rơi
+    - infographic
+    - hỏi đáp
+    - "Q&A"
+    - những điều cần biết
+    - dấu hiệu nhận biết
+  action: downgrade_to_gate
+  applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4, pattern_7, pattern_8, pattern_9]

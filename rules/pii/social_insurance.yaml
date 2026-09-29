@@ -13,7 +13,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.88
 priority: 75
-tags: [pii, social_insurance, bhxh, bhyt, financial_pii, ndctn13]
+tags: [pii, social_insurance, bhxh, bhyt, financial_pii, ndctn13, pii_strong]
 enabled: true
 
 patterns:
@@ -71,6 +71,15 @@ false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
 
+# proximity_window: chỉ áp dụng thực tế cho pattern_4 (dãy 10 số trần — pattern
+# duy nhất bị level_gate/chưa tự có label), pattern_1-3 đã có label nhúng
+# ngay trong regex nên luôn thỏa proximity dễ dàng. max_chars=50 (hẹp hơn
+# 60 dùng cho vn_id/passport) vì đây là pattern FP cao nhất trong nhóm.
+proximity_window:
+  max_chars: 50
+  same_sentence_required: true
+  keyword_scope: primary
+
 # SCALE_LARGE theo tài liệu (Bước 3): >50 số BHXH/BHYT duy nhất trong 1 file
 # → RESTRICTED. Xấp xỉ theo rule ID riêng lẻ, xem giải thích chi tiết ở
 # rules/pii/vn_id.yaml.
@@ -78,3 +87,18 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_4 (dãy 10 số trần) là nguồn FP chính — cần gate. pattern_1/2/3 đã có
+# label/prefix rõ ràng ("BHXH:", "BH"+13 ký tự, "BHYT:") — giữ nguyên hành vi cũ.
+#
+# min_confidence_bypass=0.85 (THẤP HƠN mức 0.90 dùng cho các rule khác trong
+# đợt này): pattern_4 (conf 0.68, weight 0.88) đạt tối đa chỉ ~0.898 dù boost
+# hết mức (0.68×0.88 + 0.30 boost trần) — ngưỡng 0.90 sẽ là cấu hình chết,
+# không bao giờ kích hoạt được. 0.85 vẫn đòi hỏi gần hết mức boost tối đa
+# (tức nhiều keyword mạnh xung quanh), chỉ hạ đủ để cơ chế thực sự có tác dụng.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_4]
+  exempt_patterns: [pattern_1, pattern_2, pattern_3]
+  min_confidence_bypass: 0.85

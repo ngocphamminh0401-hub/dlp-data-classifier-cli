@@ -23,11 +23,19 @@ enabled: true
 
 patterns:
   # Cặp tọa độ thập phân (lat,long) — 4-8 chữ số thập phân để tránh khớp
-  # nhầm số liệu tài chính/tỷ lệ ngẫu nhiên. Cần context (GPS/định vị gần đó).
+  # nhầm số liệu tài chính/tỷ lệ ngẫu nhiên. Định dạng RẤT chung — khớp cả
+  # tọa độ địa điểm công khai (cửa hàng/chi nhánh/bất động sản rao bán)
+  # không gắn với hành vi theo dõi cá nhân nào. context_required (chunk-wide)
+  # không đủ chặt vì primary keywords cũ có cả "vị trí"/"định vị" quá chung
+  # (VD tin rao bán nhà "Vị trí: gần trung tâm..." + tọa độ Google Maps).
+  # require_keyword_within=60: bắt buộc keyword PRIMARY (nay đã thu hẹp chỉ
+  # còn "theo dõi vị trí"/"lịch sử di chuyển" — xem keywords bên dưới) phải
+  # đứng NGAY GẦN tọa độ, không chỉ có mặt đâu đó trong min_context_window.
   - regex: '\b[-+]?\d{1,2}\.\d{4,8}\s*,\s*[-+]?\d{1,3}\.\d{4,8}\b'
     description: "Cặp tọa độ GPS dạng thập phân (lat,long)"
     confidence: 0.75
     context_required: true
+    require_keyword_within: 60
 
   # Nhãn tọa độ rõ ràng — "Tọa độ GPS: 21.028511, 105.804817"
   - regex: '(?i)(?:tọa\s*độ\s*GPS|GPS\s*coordinates?|vĩ\s*độ|kinh\s*độ|latitude|longitude)\s*[:=]'
@@ -48,16 +56,21 @@ patterns:
     context_required: true
 
 keywords:
+  # primary CHỈ giữ cụm ĐẶC TRƯNG hành vi theo dõi cá nhân (đủ hẹp để dùng
+  # làm require_keyword_within trên pattern_1 — xem pattern_1 phía trên).
+  # "tọa độ GPS"/"định vị"/"vị trí"/"geolocation"/"latitude"/"longitude"
+  # chuyển xuống secondary vì QUÁ CHUNG — xuất hiện cả trong tin rao bán bất
+  # động sản/địa chỉ chi nhánh công khai, không riêng gì theo dõi cá nhân.
   primary:
+    - "theo dõi vị trí"
+    - "lịch sử di chuyển"
+  secondary:
     - "tọa độ GPS"
     - "định vị"
     - "vị trí"
-    - "theo dõi vị trí"
-    - "lịch sử di chuyển"
     - "geolocation"
     - "latitude"
     - "longitude"
-  secondary:
     - "bản đồ"
     - "map"
     - "cell tower"

@@ -84,3 +84,10 @@ false_positive_reduction:
   min_context_window: 60
   exclude_if_no_keywords: false
   # 4 pattern đầu đã nhúng label vào regex → không cần keyword riêng
+
+# Pattern rộng, bắt OTP/PIN + chuỗi số bất kỳ 4-8 chữ số ngay sau label — dễ
+# khớp nhầm giá trị demo/tutorial lặp/tuần tự.
+placeholder_exclusion:
+  value_blocklist_patterns: ["^(0000|1234|123456|111111|000000|999999)$"]
+  doc_context_discount_keywords: [hướng dẫn, ví dụ, cách sử dụng, training, tutorial, demo]
+  doc_context_discount_factor: 0.4

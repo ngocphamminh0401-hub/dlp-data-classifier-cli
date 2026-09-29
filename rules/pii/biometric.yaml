@@ -13,7 +13,7 @@ category: pii
 level: SECRET
 weight: 0.92
 priority: 83
-tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13]
+tags: [pii, biometric, fingerprint, face_id, sensitive_pii, ndctn13, pii_strong]
 enabled: true
 
 patterns:
@@ -85,3 +85,46 @@ keywords:
 false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: false
+
+# Rule-attribution trên rawdata/ cho thấy pattern_1/3/4 (chỉ nhắc CHỦ ĐỀ sinh
+# trắc, không kèm dữ liệu thật — khác pattern_2 template/embedding) là nguồn
+# FP PUBLIC lớn thứ 3 (71 file): brochure/thông cáo báo chí ngân hàng mô tả
+# TÍNH NĂNG eKYC ("tích hợp công nghệ nhận diện sinh trắc học", "PHÁT BIỂU
+# LÃNH ĐẠO ... chia sẻ") — không phải hồ sơ có dữ liệu sinh trắc thật.
+#
+# ĐÃ THỬ required_corroboration_tags:[personal_identifier] TRƯỚC (như health_
+# 001/income_001) NHƯNG BỊ LOẠI: kiểm chứng trực tiếp cho thấy 53/71 file FP
+# VẪN có personal_identifier — không phải bằng chứng thật mà do chính 2 rule
+# đó cũng FP trên cùng văn bản PR (dob_001 khớp NGÀY PHÁT HÀNH thông cáo báo
+# chí thay vì ngày sinh; vn_name_001 khớp TÊN LÃNH ĐẠO được trích phát biểu,
+# không phải khách hàng) — dùng làm gate sẽ không lọc được phần lớn case.
+#
+# Chuyển sang negation_filter theo NGỮ VỰNG MARKETING đặc trưng: đối chiếu
+# trực tiếp cho thấy văn bản đăng ký sinh trắc THẬT dùng "hồ sơ đăng ký",
+# "tỷ lệ khớp", "loại sinh trắc học thu thập" — khác hẳn brochure PR dùng
+# "công nghệ"/"tính năng"/"trải nghiệm"/"phát biểu lãnh đạo". Xác nhận AN
+# TOÀN: chỉ 5/679 match thật trên finance_banking__top_secret rơi vào 1
+# trong các trigger (chủ yếu do trùng từ ngẫu nhiên: "Trung tâm Công nghệ
+# Ngân hàng"/"Bộ phận Công nghệ Sinh học" là TÊN PHÒNG BAN, không phải ngữ
+# cảnh marketing) — với ~6.5 match/file trung bình, các match còn lại trong
+# cùng file vẫn đủ giữ đúng SECRET ở cấp file.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+  applies_to_patterns: [pattern_1, pattern_3, pattern_4]
+
+negation_filter:
+  window_chars: 60
+  trigger_words:
+    - "công nghệ"
+    - "tính năng"
+    - "trải nghiệm người dùng"
+    - "ra mắt"
+    - "ký kết hợp tác"
+    - "sản phẩm mới"
+    - "ứng dụng ngân hàng"
+    - "phát biểu"
+    - "chia sẻ"
+    - "lãnh đạo"
+  action: downgrade_to_gate
+  applies_to_patterns: [pattern_1, pattern_3, pattern_4]

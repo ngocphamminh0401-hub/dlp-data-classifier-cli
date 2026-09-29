@@ -16,7 +16,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.88
 priority: 78
-tags: [pii, identity, passport, travel_doc, vn_specific]
+tags: [pii, identity, passport, travel_doc, vn_specific, pii_strong]
 enabled: true
 
 patterns:
@@ -84,6 +84,13 @@ false_positive_reduction:
   min_context_window: 150
   exclude_if_no_keywords: true
 
+# proximity_window: siết thêm ngoài min_context_window — "số hộ chiếu:"/
+# "passport no." thường đứng ngay sát số. Cùng logic vn_id_001.
+proximity_window:
+  max_chars: 60
+  same_sentence_required: true
+  keyword_scope: primary
+
 # SCALE_LARGE theo tài liệu (Bước 3): >50 số hộ chiếu duy nhất trong 1 file
 # → RESTRICTED. Xấp xỉ theo rule ID riêng lẻ, xem giải thích chi tiết ở
 # rules/pii/vn_id.yaml.
@@ -91,3 +98,22 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_1..4 (B/P/C-NG-X + số, kể cả pattern_4 "FP cao" tự ghi chú trong mô
+# tả) đều là dãy chữ+số trần, cần corroboration. pattern_5 (MRZ dòng 1 đầy đủ
+# "P<VNM...") gần như không thể FP — miễn gate.
+#
+# Ghi chú riêng cho pattern_4 ([A-Z]{1,2}\d{7,8}): nên cân nhắc thêm
+# min_context_window hẹp hơn (hiện 150) hoặc gộp bắt buộc corroboration kép (2
+# primary keyword thay vì 1) trong đợt review kế tiếp — KHÔNG đổi trong đợt
+# này để tránh gộp quá nhiều thay đổi cùng lúc.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1, pattern_2, pattern_3, pattern_4]
+  exempt_patterns: [pattern_5]
+  # min_confidence_bypass=0.90: pattern_1-3 (conf 0.82-0.88, weight 0.88) đạt
+  # được ≥0.90 khi có keyword ngữ cảnh mạnh gần đó. pattern_4 (conf 0.65, "FP
+  # cao" tự ghi chú) KHÔNG BAO GIỜ đạt ngưỡng này dù boost tối đa (~0.87) —
+  # tự động vẫn bị gate đầy đủ, đúng tinh thần "cần siết thêm" đã ghi ở trên.
+  min_confidence_bypass: 0.90

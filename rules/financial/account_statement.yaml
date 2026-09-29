@@ -9,7 +9,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.75
 priority: 75
-tags: [financial, bank_account, statement, pii]
+tags: [financial, bank_account, statement, pii, financial_personal]
 enabled: true
 
 patterns:
@@ -46,6 +46,21 @@ keywords:
 level_gate:
   require_corroboration: true
   fallback_level: INTERNAL
+
+# pattern_1 ("sao kê tài khoản" tiêu đề) khớp nhầm DÒNG BIỂU PHÍ DỊCH VỤ
+# ("Sao kê tài khoản định kỳ 5.500 VNĐ/lần", "Phí cấp lại sao kê tài khoản
+# (bản in) 10.000 VND/lần") — đây là bảng giá dịch vụ ngân hàng công khai,
+# không phải sao kê thật. Dùng suppress (không phải downgrade_to_gate) vì
+# fallback_level hiện tại (INTERNAL) KHÔNG đúng cho case này — bảng biểu phí
+# là nội dung PUBLIC hoàn toàn, cần loại match hẳn để FinalLevel có thể về
+# đúng PUBLIC nếu không có tín hiệu nào khác. Xác nhận AN TOÀN: 0/131 match
+# pattern_1 driver trên finance_banking__internal/confidential thật có tín
+# hiệu biểu phí (giá + "/lần"/"/tháng"/"/tờ") đi kèm.
+negation_filter:
+  window_chars: 30
+  trigger_words: ["/lần", "/tháng", "/tờ", "biểu phí", "miễn phí"]
+  action: suppress
+  applies_to_patterns: [pattern_1]
 
 false_positive_reduction:
   min_context_window: 100

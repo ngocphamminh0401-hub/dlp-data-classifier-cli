@@ -16,6 +16,15 @@
 scan-result.jsonl
 *.jsonl
 
+# Pha 2 — feature collection output (regenerate với scripts/pha2_*.go)
+/pha2out/
+
+# Python (scripts/notebooks — Pha 4/5)
+__pycache__/
+*.pyc
+.venv/
+.ipynb_checkpoints/
+
 # Config với thông tin nhạy cảm (nếu có)
 config.local.yaml
 *.local.yaml

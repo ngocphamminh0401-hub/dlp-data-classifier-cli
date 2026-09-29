@@ -71,6 +71,7 @@ dlp scan [flags] <path>
 | `--level` | string | `INTERNAL` | Chỉ báo cáo từ cấp này trở lên: `INTERNAL`, `CONFIDENTIAL`, `SECRET` |
 | `--rules-dir` | string | `./rules` | Đường dẫn tới thư mục chứa rule YAML |
 | `--audit-log` | string | - | Ghi audit log JSONL vào file |
+| `--telemetry-log` | string | - | Ghi near-miss telemetry JSONL theo từng file (Pha 1 — chỉ để dump, không routing) |
 | `--no-recurse` | bool | false | Không duyệt đệ quy thư mục con |
 | `--skip` | string | - | Glob pattern bỏ qua (VD: `"*.log,*.tmp"`) |
 | `--timeout` | duration | `0` | Timeout toàn bộ lần scan (0 = không giới hạn) |

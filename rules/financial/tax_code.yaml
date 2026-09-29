@@ -4,7 +4,13 @@
 # PHÂN LOẠI PHÁP LÝ:
 #   MST doanh nghiệp 10 số — CÔNG KHAI (Luật DN 2020 Điều 216, tra cứu được trên
 #   Cổng thông tin quốc gia về ĐKDN). In trên hóa đơn, hợp đồng, hồ sơ thầu.
-#   → Level: INTERNAL (không phải bí mật nhưng cần kiểm soát trong hệ thống)
+#   → Level: PUBLIC (quyết định chính sách — MST DN tra cứu miễn phí công khai,
+#   không có giá trị bảo mật thật). ĐÃ ĐỔI TỪ INTERNAL: rule-attribution trên
+#   rawdata/ cho thấy đây là nguồn over-classify PUBLIC→INTERNAL lớn thứ 2
+#   (122 file) — "Mã số doanh nghiệp: 0401234567" trong chân trang văn bản
+#   PUBLIC (thông báo/tài liệu công khai của tổ chức) trước đây tự động
+#   INTERNAL dù không có bằng chứng nhạy cảm nào khác kèm theo. Xác nhận với
+#   người dùng: mã số DN/thuế công khai theo luật, hạ level xuống PUBLIC.
 #
 # MST cá nhân 13 số → xem tax_code_personal.yaml (CONFIDENTIAL).
 #
@@ -16,7 +22,7 @@
 id: tax_code_business_001
 name: "Mã số thuế doanh nghiệp / chi nhánh Việt Nam"
 category: financial
-level: INTERNAL
+level: PUBLIC
 weight: 0.75
 priority: 60
 tags: [financial, tax_code, business_id, org_identifier]

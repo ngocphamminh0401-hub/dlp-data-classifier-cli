@@ -47,11 +47,18 @@ patterns:
     confidence: 0.80
     context_required: true
 
-  # Hotline 4 số (1800, 1900) — thường là số tổng đài
+  # Hotline 4 số (1800, 1900) — LUÔN là số tổng đài/đường dây nóng theo quy
+  # hoạch số của Bộ TT&TT, KHÔNG BAO GIỜ là số điện thoại cá nhân (đầu số
+  # 1800/1900 chỉ cấp cho tổ chức đăng ký dịch vụ tổng đài) — khác các đầu số
+  # di động/cố định khác trong rule này. override_level: PUBLIC vì đây là tín
+  # hiệu CẤU TRÚC (structural), không phải suy đoán ngữ cảnh — an toàn tuyệt
+  # đối, không cần gate. Xác nhận qua rule-attribution: 8 file PUBLIC (đường
+  # dây nóng y tế/ngân hàng công khai) bị đẩy sai lên INTERNAL trước đây.
   - regex: '\b1(?:800|900)\d{4,6}\b'
     description: "Số tổng đài 1800/1900 VN"
     confidence: 0.70
     context_required: true
+    override_level: PUBLIC
 
 keywords:
   primary:

@@ -9,24 +9,29 @@
 //  2. Với mỗi regex match:
 //     a. Tính base score: pattern.Confidence × rule.Weight
 //     b. Distance-weighted context boost — 3 vùng khoảng cách:
-//        ┌──────────────────────────────────────────────────────────────────┐
-//        │  Zone 1: khoảng cách 0–20 byte  → primary +0.15 / secondary +0.07│
-//        │  Zone 2: khoảng cách 21–50 byte → primary +0.10 / secondary +0.05│
-//        │  Zone 3: khoảng cách 51–window  → primary +0.05 / secondary +0.02│
-//        │  Ngoài window: không boost (keyword không liên quan)             │
-//        │  Tổng boost tối đa: +0.30 (capped)                              │
-//        └──────────────────────────────────────────────────────────────────┘
-//        Tại sao distance-weighted?
-//        "visa" ngay trước "4532015112830366" xác nhận mạnh hơn "visa" cách 180 byte.
-//        Từ xa → ngữ cảnh yếu hơn → boost thấp hơn.
+//     ┌──────────────────────────────────────────────────────────────────┐
+//     │  Zone 1: khoảng cách 0–20 byte  → primary +0.15 / secondary +0.07│
+//     │  Zone 2: khoảng cách 21–50 byte → primary +0.10 / secondary +0.05│
+//     │  Zone 3: khoảng cách 51–window  → primary +0.05 / secondary +0.02│
+//     │  Ngoài window: không boost (keyword không liên quan)             │
+//     │  Tổng boost tối đa: +0.30 (capped)                              │
+//     └──────────────────────────────────────────────────────────────────┘
+//     Tại sao distance-weighted?
+//     "visa" ngay trước "4532015112830366" xác nhận mạnh hơn "visa" cách 180 byte.
+//     Từ xa → ngữ cảnh yếu hơn → boost thấp hơn.
 //     c. Validators (Luhn, ...):
-//        - Pass → confidence = max(confidence, 0.99)  [validator confirms match]
-//        - Fail → bỏ qua match hoàn toàn             [hard reject FP]
+//     - Pass → confidence = max(confidence, 0.99)  [validator confirms match]
+//     - Fail → bỏ qua match hoàn toàn             [hard reject FP]
+//     c.5. Placeholder exclusion (hard reject): value khớp value_blocklist_patterns
+//     hoặc known_test_values → bỏ qua match hoàn toàn
 //     d. FP reduction: ExcludeIfNoKeywords + CVV/expiry boost
+//     d.5. Placeholder exclusion (soft discount): chunk có doc_context_discount_keywords
+//     → confidence *= doc_context_discount_factor
 //     e. Nếu confidence < minConfidence → bỏ qua
 //     f. Xác định cấp độ (override_level hoặc rule.ParsedLevel)
 //     g. Kiểm tra escalation keywords → nâng cấp nếu cần
-//     h. Thêm vào kết quả
+//     h. Negation filter: từ phủ định gần match → hạ ngay về level_gate.fallback
+//     i. Thêm vào kết quả
 //
 // # Confidence formula
 //
@@ -42,6 +47,8 @@ import (
 	"bytes"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // matchOpts chứa các tham số scoring được truyền từ Engine.Scan().
@@ -68,8 +75,16 @@ var (
 // của mỗi match để kết quả phản ánh vị trí tuyệt đối trong file.
 //
 // Hàm này là hot path; gọi hàng triệu lần → không allocate nếu không có match.
-func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, opts matchOpts) []RuleMatch {
+func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, opts matchOpts, tel *FileScanTelemetry) []RuleMatch {
 	var out []RuleMatch
+
+	// placeholder_exclusion.doc_context_discount: tính 1 LẦN cho cả chunk (không
+	// phải mỗi match) — tránh lowercase lại toàn bộ chunk hàng nghìn lần trong
+	// hot path. Chỉ tốn chi phí này cho các rule THỰC SỰ khai báo cơ chế này.
+	docContextDiscount := false
+	if rule.PlaceholderExclusion.DocContextDiscountFactor > 0 && len(rule.PlaceholderExclusion.DocContextDiscountKeywords) > 0 {
+		docContextDiscount = containsAnyKeyword(chunk, rule.PlaceholderExclusion.DocContextDiscountKeywords)
+	}
 
 	for patIdx := range rule.Patterns {
 		pat := &rule.Patterns[patIdx]
@@ -82,6 +97,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 		// tìm thấy keyword nào cho rule này → bỏ qua toàn bộ pattern.
 		// Tiết kiệm CPU: không chạy regex khi rõ ràng sẽ là false positive.
 		if pat.ContextRequired && !hits.HasRule(rule.ID) {
+			tel.ContextRequiredSkipCount++
 			continue
 		}
 
@@ -102,6 +118,13 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				continue
 			}
 
+			// RequireKeywordWithin: siết chặt context_required xuống mức TỪNG
+			// MATCH — khác hits.HasRule (chunk-wide) ở trên, đòi keyword PRIMARY
+			// phải THỰC SỰ gần match này, không chỉ có mặt đâu đó trong chunk.
+			if pat.RequireKeywordWithin > 0 && !hasPrimaryKeywordWithin(hits, rule.ID, start, end, pat.RequireKeywordWithin) {
+				continue
+			}
+
 			// ── 1. Base score ─────────────────────────────────────────────
 			score := pat.Confidence * rule.Weight
 
@@ -118,6 +141,13 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			if len(pat.Validators) > 0 {
 				passed, enforced := applyValidators(matchBytes, pat.Validators)
 				if enforced && !passed {
+					tel.ValidatorFailCount++
+					// S3 near-miss: định dạng PII đúng chỗ, checksum sai NHƯNG có
+					// từ vựng PII cấu trúc gần đó → nghi số thật bị OCR/nhập sai,
+					// không phải số random.
+					if containsSensitiveContextNear(chunk, loc[0], loc[1], 400) {
+						tel.ValidatorFailInContextCount++
+					}
 					continue // false positive đã bị lọc bởi thuật toán (vd: số thẻ sai Luhn)
 				}
 				if enforced && passed {
@@ -129,11 +159,58 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				}
 			}
 
+			// ── 3.5 Placeholder exclusion: hard reject ────────────────────
+			// Chạy SAU validators (đáp ứng yêu cầu known_test_values "so khớp
+			// SAU khi đã qua luhn_required" — match nào fail Luhn đã bị loại ở
+			// bước 3, chỉ còn match hợp lệ Luhn tới đây).
+			pe := &rule.PlaceholderExclusion
+			if len(pe.CompiledBlocklist) > 0 {
+				var val []byte
+				if pe.ValueBlocklistFullMatch {
+					val = bytes.TrimSpace(matchBytes)
+				} else {
+					val = extractMatchValue(matchBytes)
+				}
+				blocked := false
+				for _, re := range pe.CompiledBlocklist {
+					if re.Match(val) {
+						blocked = true
+						break
+					}
+				}
+				if blocked {
+					continue // giá trị placeholder đã biết (changeme, 123456, <...>...)
+				}
+			}
+			if len(pe.NormalizedTestValues) > 0 {
+				if _, isTestValue := pe.NormalizedTestValues[string(digitsOnly(matchBytes))]; isTestValue {
+					continue // số thẻ test công khai của cổng thanh toán (Stripe, VNPay...)
+				}
+			}
+
 			// ── 4. FP reduction: exclude_if_no_keywords ───────────────────
 			// Cho các loại dữ liệu như số CMND/CCCD, số tài khoản — cần có keyword
 			// đi kèm để phân biệt với số serial, mã sản phẩm, ...
-			if rule.FPReduction.ExcludeIfNoKeywords && !hits.HasRule(rule.ID) {
-				continue
+			//
+			// Nếu rule khai proximity_window (MaxChars>0): thay check chunk-wide
+			// bằng quan hệ AND 2 vế — (a) keyword trong MinContextWindow byte
+			// (lưới an toàn rộng) VÀ (b) keyword thỏa ProximityWindow (gần +
+			// cùng câu). Rule KHÔNG khai proximity_window giữ nguyên hành vi
+			// chunk-wide cũ (hits.HasRule) — không thay đổi hành vi hiện có.
+			if rule.FPReduction.ExcludeIfNoKeywords {
+				if rule.ProximityWindow.MaxChars > 0 {
+					if !hasKeywordWithinWindow(hits, rule.ID, start, end, rule.FPReduction.MinContextWindow) {
+						tel.ProximityRejectCount++
+						continue
+					}
+					if !keywordSatisfiesProximity(chunk, hits, rule.ID, start, end, rule.ProximityWindow) {
+						tel.ProximityRejectCount++
+						continue
+					}
+				} else if !hits.HasRule(rule.ID) {
+					tel.ProximityRejectCount++
+					continue
+				}
 			}
 
 			// ── 5. CVV + Expiry context boost (cho credit card) ───────────
@@ -144,6 +221,14 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				if cvvPattern.Match(window) && expiryPattern.Match(window) {
 					score = clamp01(score + rule.FPReduction.CVVExpiryBoost)
 				}
+			}
+
+			// ── 5.5 Placeholder exclusion: doc context discount ───────────
+			// Chunk có từ khóa "hướng dẫn"/"ví dụ"/"SOP"/"template"... → giảm
+			// (KHÔNG loại hẳn) confidence — match vẫn có thể qua ngưỡng nếu
+			// vốn đã rất cao.
+			if docContextDiscount {
+				score = clamp01(score * rule.PlaceholderExclusion.DocContextDiscountFactor)
 			}
 
 			// ── 6. Ngưỡng confidence ─────────────────────────────────────
@@ -164,7 +249,25 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 			// Nếu phát hiện từ khóa escalation gần match → nâng cấp độ.
 			// Ví dụ: "hợp đồng" + "quốc phòng" → PUBLIC → SECRET
 			if rule.Escalation.EscalateTo != "" && len(rule.Escalation.Keywords) > 0 {
-				level = checkEscalation(chunk, loc[0], loc[1], rule, level)
+				level = checkEscalation(chunk, loc[0], loc[1], rule, level, tel)
+			}
+
+			// ── 8.5 Negation filter ────────────────────────────────────────
+			// Từ/cụm phủ định (VD "không phải tài liệu nội bộ", "this email")
+			// xuất hiện gần match → xử lý NGAY theo Action, bất kể corroboration
+			// khác — bằng chứng phủ định trực tiếp mạnh hơn nên không cần chờ
+			// Step 4.5 (applyLevelGate) đánh giá lại. AppliesToPatterns rỗng =
+			// áp dụng cho pattern này; nếu có danh sách, chỉ áp dụng khi pattern
+			// hiện tại (patIdx, 1-indexed "pattern_N") có trong danh sách.
+			if len(rule.NegationFilter.TriggerWords) > 0 &&
+				negationAppliesToPattern(rule.NegationFilter.AppliesToPatterns, patIdx) &&
+				negationTriggered(chunk, loc[0], loc[1], rule.NegationFilter.WindowChars, rule.NegationFilter.TriggerWords) {
+				if rule.NegationFilter.Action == "suppress" {
+					tel.NegationSuppressCount++
+					continue // loại bỏ match hoàn toàn — không góp phần vào bất kỳ level nào
+				}
+				tel.NegationDowngradeCount++
+				level = rule.LevelGate.ParsedFallbackLevel // "downgrade_to_gate"
 			}
 
 			// ── 9. Preview (masked) ───────────────────────────────────────
@@ -186,6 +289,7 @@ func matchAllPatterns(chunk []byte, rule *Rule, hits HitMap, baseOffset int64, o
 				Value:       string(matchBytes),
 				PatternDesc: pat.Description,
 				Validated:   validated,
+				PatternIdx:  patIdx,
 			})
 		}
 	}
@@ -224,6 +328,201 @@ var contextZones = []ContextZone{
 
 // maxTotalBoost là tổng boost tối đa từ keyword context, dù có bao nhiêu keyword.
 const maxTotalBoost = 0.30
+
+// hasPrimaryKeywordWithin kiểm tra có keyword PRIMARY nào của ruleID nằm
+// trong khoảng windowChars quanh match [matchStart, matchEnd) không — dùng
+// cho RulePattern.RequireKeywordWithin (siết chặt context_required xuống mức
+// từng match, thay vì chunk-wide như hits.HasRule).
+func hasPrimaryKeywordWithin(hits HitMap, ruleID string, matchStart, matchEnd int64, windowChars int) bool {
+	for _, hit := range hits[ruleID] {
+		if !hit.Primary {
+			continue
+		}
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) <= windowChars {
+			return true
+		}
+	}
+	return false
+}
+
+// hasKeywordWithinWindow kiểm tra có keyword BẤT KỲ (primary hoặc secondary)
+// của ruleID nằm trong khoảng windowChars quanh match không — dùng cho vế
+// (a) của FPReduction.ExcludeIfNoKeywords khi MinContextWindow>0 (lưới an
+// toàn rộng, không đòi cùng câu — xem ProximityWindow).
+func hasKeywordWithinWindow(hits HitMap, ruleID string, matchStart, matchEnd int64, windowChars int) bool {
+	for _, hit := range hits[ruleID] {
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) <= windowChars {
+			return true
+		}
+	}
+	return false
+}
+
+// ─── Proximity window (khoảng cách + ranh giới câu, tiếng Việt) ──────────────
+//
+// vnSentenceAbbrevTokens: token (đã lowercase) đứng NGAY TRƯỚC 1 dấu "." mà
+// KHÔNG coi là ranh giới kết câu — viết tắt hành chính/học thuật VN phổ biến:
+// TP., Th.S (2 token "th"+"s"), ThS., T.S (2 token "t"+"s"), PGS., GS., ĐH.,
+// Cty., Q. (Quận), P. (Phường).
+var vnSentenceAbbrevTokens = map[string]bool{
+	"tp": true, "th": true, "ths": true, "t": true, "s": true,
+	"pgs": true, "gs": true, "đh": true, "cty": true, "q": true, "p": true,
+}
+
+// isDigitToken báo cáo token có phải TOÀN CHỮ SỐ không — dùng loại trừ số
+// thứ tự điều khoản ("Điều 5.", "1.2.3.") khỏi ranh giới kết câu.
+func isDigitToken(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// wordBefore trích token chữ+số liền kề NGAY TRƯỚC byte offset pos trong
+// chunk (dừng ở khoảng trắng/dấu câu) — dùng kiểm tra viết tắt/số thứ tự
+// đứng trước dấu ".".
+func wordBefore(chunk []byte, pos int) string {
+	start := pos
+	for start > 0 {
+		r, size := utf8.DecodeLastRune(chunk[:start])
+		if r == utf8.RuneError && size <= 1 {
+			break
+		}
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			break
+		}
+		start -= size
+	}
+	return string(chunk[start:pos])
+}
+
+// isSentenceEndDot báo cáo dấu "." tại chunk[pos] có phải ranh giới kết câu
+// THẬT không. Loại trừ theo thứ tự:
+//  1. \d.\d — separator hàng nghìn/thập phân ("25.000.000", "3.14").
+//  2. Viết tắt hành chính VN (vnSentenceAbbrevTokens) hoặc số thứ tự điều
+//     khoản ("Điều 5.", "1.2.") — token ngay trước dấu "." toàn chữ số.
+//
+// Còn lại: "." là ranh giới câu nếu theo sau (bỏ qua khoảng trắng) là chữ
+// hoa (kể cả chữ hoa có dấu tiếng Việt) hoặc xuống dòng/hết chunk.
+func isSentenceEndDot(chunk []byte, pos int) bool {
+	if pos > 0 && pos+1 < len(chunk) {
+		before, after := chunk[pos-1], chunk[pos+1]
+		if before >= '0' && before <= '9' && after >= '0' && after <= '9' {
+			return false
+		}
+	}
+	word := strings.ToLower(wordBefore(chunk, pos))
+	if vnSentenceAbbrevTokens[word] || isDigitToken(word) {
+		return false
+	}
+	i := pos + 1
+	for i < len(chunk) && (chunk[i] == ' ' || chunk[i] == '\t') {
+		i++
+	}
+	if i >= len(chunk) {
+		return true
+	}
+	if chunk[i] == '\n' {
+		return true
+	}
+	r, _ := utf8.DecodeRune(chunk[i:])
+	return unicode.IsUpper(r)
+}
+
+// crossesSentenceBoundary báo cáo có ranh giới kết câu THẬT nào trong
+// chunk[from:to) không.
+//
+// "\n" ĐƠN LẺ KHÔNG phải ranh giới câu: file DOCX/PDF trích xuất chèn "\n"
+// liên tục do ngắt dòng/cấu trúc <w:p>/PDF line wrap, không phải do hết câu
+// — xác nhận qua fin_conf_00009.pdf: label "số tài khoản:" và giá trị
+// "776888057" nằm 2 dòng khác nhau (line wrap thuần túy) khiến toàn bộ match
+// mất corroboration oan nếu coi "\n" là ranh giới. Chỉ "\n\n" (dòng trống/
+// ngắt đoạn thật) mới coi là ranh giới câu.
+//
+// ":" KHÔNG coi là ranh giới câu (đã bỏ rule cũ "cuối dòng = ranh giới"):
+// cùng lý do — "Nhãn:\nGiá trị" (label và giá trị tách dòng) là mẫu CỰC KỲ
+// phổ biến trong văn bản trích xuất, cần giữ NGUYÊN "cùng câu" để corroborate
+// đúng, không phải ranh giới.
+//
+// ";", "!", "?" luôn là ranh giới; "." áp dụng loại trừ qua isSentenceEndDot.
+func crossesSentenceBoundary(chunk []byte, from, to int) bool {
+	if from > to {
+		from, to = to, from
+	}
+	from = maxI(0, from)
+	to = minI(len(chunk), to)
+	for i := from; i < to; i++ {
+		switch chunk[i] {
+		case '\n':
+			if i+1 < to && chunk[i+1] == '\n' {
+				return true
+			}
+		case ';', '!', '?':
+			return true
+		case '.':
+			if isSentenceEndDot(chunk, i) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasSentenceBoundaryNear báo cáo có ranh giới câu nào trong ±radius byte
+// quanh pos không — dùng cho fallback_on_no_boundary: nếu KHÔNG tìm thấy
+// ranh giới câu nào gần keyword (văn bản dạng bảng/liệt kê không dấu câu
+// chuẩn), bỏ qua yêu cầu same_sentence_required thay vì báo lỗi/mất recall.
+func hasSentenceBoundaryNear(chunk []byte, pos, radius int) bool {
+	return crossesSentenceBoundary(chunk, pos-radius, pos+radius)
+}
+
+// keywordSatisfiesProximity kiểm tra có ≥1 keyword (theo pw.KeywordScope)
+// của ruleID thỏa ProximityWindow quanh match [matchStart, matchEnd) không:
+// khoảng cách ≤ pw.MaxChars VÀ (nếu SameSentenceRequired) cùng câu với match
+// — trừ khi không xác định được ranh giới câu nào gần keyword (fallback:
+// coi như thỏa, xem hasSentenceBoundaryNear).
+func keywordSatisfiesProximity(chunk []byte, hits HitMap, ruleID string, matchStart, matchEnd int64, pw ProximityWindow) bool {
+	// fallback_on_no_boundary=window: nếu KHÔNG tìm thấy ranh giới câu nào
+	// trong ±100 byte quanh CHÍNH MATCH (không phải quanh từng keyword riêng
+	// lẻ) → đây nhiều khả năng là dữ liệu dạng bảng/liệt kê (header cách xa
+	// value nhiều dòng/cột — VD "Số tài khoản" ở hàng tiêu đề, giá trị nằm ở
+	// ô cách đó hàng trăm byte, không có dấu câu nào giữa 2 vị trí) — bỏ qua
+	// TOÀN BỘ proximity_window (cả max_chars lẫn same_sentence), coi như đã
+	// thỏa vế (b); vế (a) — min_context_window — vẫn là rào chắn duy nhất
+	// trong trường hợp này. Xác nhận qua fin_top_00676.docx (bảng khách hàng
+	// VIP nhiều cột: header "Số tài khoản" và giá trị 14 số cách nhau xa hơn
+	// max_chars nhưng không có dấu câu nào ở giữa — check max_chars trước
+	// fallback như bản đầu khiến TOÀN BỘ match dạng bảng bị loại oan).
+	if pw.SameSentenceRequired && !hasSentenceBoundaryNear(chunk, int(matchStart), 100) {
+		return true
+	}
+
+	primaryOnly := pw.KeywordScope != "primary_or_secondary"
+	for _, hit := range hits[ruleID] {
+		if primaryOnly && !hit.Primary {
+			continue
+		}
+		if int(kwDistance(hit.Offset, matchStart, matchEnd)) > pw.MaxChars {
+			continue
+		}
+		if !pw.SameSentenceRequired {
+			return true
+		}
+		lo, hi := int(hit.Offset), int(matchStart)
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		if !crossesSentenceBoundary(chunk, lo, hi) {
+			return true // cùng câu thật
+		}
+	}
+	return false
+}
 
 // distanceWeightedBoost tính tổng boost dựa trên khoảng cách keyword đến match.
 //
@@ -800,22 +1099,6 @@ func shouldSkipPostFilter(chunk []byte, start, end int, ruleID string, match []b
 				return true
 			}
 		}
-	case "email_001":
-		// System/department emails in public documents are not personal data.
-		systemPrefixes := []string{
-			"noreply@", "no-reply@", "donotreply@", "do-not-reply@", "mailer-daemon@", "bounce@",
-			"info@", "contact@", "support@", "help@", "admin@", "administrator@",
-			"hotline@", "cskh@", "dichvu@", "dịchvụ@", "thongbao@", "thông-bao@",
-			"newsletter@", "marketing@", "sales@", "pr@", "media@",
-			"webmaster@", "postmaster@", "unsubscribe@", "listserv@",
-			"announce@", "notification@", "alert@", "system@", "robot@", "bot@",
-			"no.reply@", "do.not.reply@",
-		}
-		for _, prefix := range systemPrefixes {
-			if strings.HasPrefix(lower, prefix) {
-				return true
-			}
-		}
 	}
 
 	_ = end
@@ -844,11 +1127,85 @@ func isCommentedLine(chunk []byte, start int) bool {
 	return strings.HasPrefix(prefix, "#") || strings.HasPrefix(prefix, "//") || strings.HasPrefix(prefix, ";")
 }
 
+// ─── Placeholder exclusion ──────────────────────────────────────────────────
+
+// containsAnyKeyword kiểm tra có bất kỳ keyword nào (case-insensitive) xuất
+// hiện trong chunk không. Dùng cho placeholder_exclusion.doc_context_discount
+// — gọi 1 LẦN mỗi rule/chunk (không phải mỗi match) vì phải lowercase cả chunk.
+func containsAnyKeyword(chunk []byte, keywords []string) bool {
+	lower := bytes.ToLower(chunk)
+	for _, kw := range keywords {
+		if bytes.Contains(lower, bytes.ToLower([]byte(kw))) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractMatchValue trích xuất phần "giá trị" từ 1 match label+value (VD
+// "password=changeme123" → "changeme123", "CVV: 123" → "123") để so khớp với
+// placeholder_exclusion.value_blocklist_patterns — các pattern này ANCHOR
+// (^...$) nên cần value đã tách khỏi label, không phải toàn bộ match.
+//
+// Heuristic (RE2 không có capture group extraction trong luồng hiện tại):
+// lấy phần sau dấu ':'/'=' CUỐI CÙNG trong match; nếu không có, lấy phần sau
+// khoảng trắng CUỐI CÙNG; nếu match không có delimiter/khoảng trắng nào (VD
+// pattern tự nó LÀ giá trị, như AWS key AKIA...), dùng nguyên match. Luôn trim
+// khoảng trắng và dấu ngoặc kép/đơn bao quanh.
+func extractMatchValue(match []byte) []byte {
+	s := match
+	if idx := bytes.LastIndexAny(s, ":="); idx >= 0 && idx+1 < len(s) {
+		s = s[idx+1:]
+	} else if idx := bytes.LastIndexByte(s, ' '); idx >= 0 && idx+1 < len(s) {
+		s = s[idx+1:]
+	}
+	return bytes.Trim(s, " \t\r\n\"'")
+}
+
+// ─── Negation filter ────────────────────────────────────────────────────────
+
+// negationAppliesToPattern kiểm tra negation_filter có áp dụng cho pattern ở
+// vị trí patIdx (0-indexed) không. applies rỗng = áp dụng cho MỌI pattern;
+// ngược lại chỉ áp dụng khi "pattern_<patIdx+1>" có trong danh sách (khớp quy
+// ước 1-indexed của negation_filter.applies_to_patterns, xem parsePatternRef).
+func negationAppliesToPattern(applies []string, patIdx int) bool {
+	if len(applies) == 0 {
+		return true
+	}
+	ref := "pattern_" + itoa(patIdx+1)
+	for _, a := range applies {
+		if a == ref {
+			return true
+		}
+	}
+	return false
+}
+
+// negationTriggered kiểm tra xem có trigger word nào của negation_filter xuất
+// hiện trong khoảng ±windowChars byte quanh match [start, end) không.
+// So khớp case-insensitive (không cần chuẩn hóa dấu — trigger_words trong YAML
+// nên viết đúng dấu tiếng Việt để khớp chính xác).
+func negationTriggered(chunk []byte, start, end, windowChars int, triggerWords []string) bool {
+	ctxStart := maxI(0, start-windowChars)
+	ctxEnd := minI(len(chunk), end+windowChars)
+	window := strings.ToLower(string(chunk[ctxStart:ctxEnd]))
+	for _, w := range triggerWords {
+		if strings.Contains(window, strings.ToLower(w)) {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── Escalation ───────────────────────────────────────────────────────────────
 
 // checkEscalation kiểm tra xem có keyword escalation nào trong ±300 byte
 // quanh match không; nếu có, nâng cấp level lên rule.Escalation.EscalateTo.
-func checkEscalation(chunk []byte, start, end int, rule *Rule, current ClassificationLevel) ClassificationLevel {
+//
+// S1 near-miss: nếu KHÔNG escalate được nhưng escalation keyword có mặt trong
+// "penumbra" 300–900 byte (quá xa để trigger), cộng grade = (900−d)/600 vào
+// tel.EscalationNearMissScore — "văn bản có từ vựng leo thang, chỉ đặt sai chỗ".
+func checkEscalation(chunk []byte, start, end int, rule *Rule, current ClassificationLevel, tel *FileScanTelemetry) ClassificationLevel {
 	ctxStart := maxI(0, start-300)
 	ctxEnd := minI(len(chunk), end+300)
 	window := bytes.ToLower(chunk[ctxStart:ctxEnd])
@@ -858,6 +1215,30 @@ func checkEscalation(chunk []byte, start, end int, rule *Rule, current Classific
 			escalated := ParseLevel(rule.Escalation.EscalateTo)
 			if escalated > current {
 				return escalated
+			}
+		}
+	}
+
+	// ── S1: escalation near-miss trong penumbra ──
+	if tel != nil && ParseLevel(rule.Escalation.EscalateTo) > current {
+		pStart := maxI(0, start-900)
+		pEnd := minI(len(chunk), end+900)
+		penumbra := bytes.ToLower(chunk[pStart:pEnd])
+		for _, kw := range rule.Escalation.Keywords {
+			idx := bytes.Index(penumbra, bytes.ToLower([]byte(kw)))
+			if idx < 0 {
+				continue
+			}
+			absPos := pStart + idx
+			d := start - absPos
+			if absPos >= end {
+				d = absPos - end
+			}
+			if d < 300 {
+				d = 300 // đã nằm trong ±300 mà không match kw đầy đủ ở trên → coi như sát ngưỡng
+			}
+			if grade := float64(900-d) / 600.0; grade > 0 {
+				tel.EscalationNearMissScore += grade
 			}
 		}
 	}

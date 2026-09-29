@@ -10,7 +10,7 @@ category: financial
 level: CONFIDENTIAL
 weight: 0.80
 priority: 80
-tags: [financial, credit_card, statement, pii]
+tags: [financial, credit_card, statement, pii, financial_personal]
 enabled: true
 
 patterns:

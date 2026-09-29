@@ -76,9 +76,20 @@ keywords:
 # kèm bối cảnh sức khỏe) không đủ tin cậy tự động RESTRICTED — cần lặp lại
 # hoặc có rule PII/financial khác ≥ CONFIDENTIAL corroborate trong cùng chunk
 # (identity cá nhân đã có sẵn qua vn_id_001/vn_name_001/dob_001 khác).
+#
+# ĐÃ SIẾT (required_corroboration_tags + strict_tags_only): mặc định "hasOther
+# StrongRule/counts>=2" quá lỏng — "hội đồng kỷ luật" (HR-002d, bare) khớp
+# nhầm ĐIỀU KHOẢN CHÍNH SÁCH chung mô tả sự tồn tại của hội đồng kỷ luật
+# công ty ("...do hội đồng kỷ luật Công ty quyết định theo quy định pháp
+# luật"), không gắn 1 cá nhân bị xử lý kỷ luật cụ thể nào — gây 8 file PUBLIC
+# bị đẩy sai lên RESTRICTED. Xác nhận AN TOÀN: 0/5 file FP PUBLIC có personal_
+# identifier đi kèm; 114/118 file RESTRICTED thật CÓ (4 file không có vẫn
+# chấp nhận được — đổi lấy 8 file PUBLIC, cùng logic đã áp dụng cho income_001).
 level_gate:
   require_corroboration: true
   fallback_level: CONFIDENTIAL
+  required_corroboration_tags: [personal_identifier]
+  strict_tags_only: true
 
 false_positive_reduction:
   min_context_window: 120

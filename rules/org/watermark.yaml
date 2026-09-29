@@ -68,11 +68,40 @@ patterns:
     confidence: 0.88
     context_required: false
 
-  # INTERNAL standalone với word boundary — confidence thấp, cần context
-  - regex: '(?i)\bINTERNAL\b'
-    description: "ORG-006f INTERNAL standalone"
-    confidence: 0.72
-    context_required: true
+# ĐÃ XÓA pattern ORG-006f "\bINTERNAL\b" standalone (confidence 0.72,
+# context_required=true): đóng góp recall thấp (7 pattern trên đã đủ đặc
+# trưng để bắt watermark thật) nhưng là nguồn FP cao nhất — khớp "internal
+# server", "internal audit", "internal API" trong tài liệu kỹ thuật không
+# liên quan phân loại watermark.
+
+negation_filter:
+  window_chars: 40
+  trigger_words:
+    - "không phải tài liệu nội bộ"
+    - "đã công bố"
+    - "đã được phê duyệt công khai"
+    - "không thuộc diện hạn chế"
+  action: downgrade_to_gate
+
+# Rule đứng riêng (không có compound rule nào yêu cầu watermark_001 làm điều
+# kiện phụ), nay có negation_filter làm evidence phụ trực tiếp cho việc phủ
+# nhận → thêm gate để nhất quán: 1 match watermark đơn lẻ không lặp lại và
+# không có rule khác hỗ trợ ở level ≥ CONFIDENTIAL bị hạ về PUBLIC.
+#
+# min_confidence_bypass=0.90: watermark là nhãn xuất hiện ĐÚNG 1 LẦN theo
+# thiết kế (header/footer tài liệu) — bắt lặp lại ≥2 lần hay đòi rule khác hỗ
+# trợ gần như luôn thất bại với văn bản ngắn chỉ có watermark làm tín hiệu
+# duy nhất, dù đó vẫn là tài liệu nội bộ thật. Xác nhận qua eval_confusion.go
+# --domain healthcare: gate ban đầu (không có bypass) khiến health_int_00007.
+# docx ("lưu hành nội bộ", confidence 1.00, healthcare__internal ground truth
+# INTERNAL) bị hạ sai xuống PUBLIC — regression -58 file trên toàn domain
+# (INTERNAL accuracy 79.0%→75.4%). 7 pattern còn lại sau khi loại ORG-006f
+# (INTERNAL standalone) đều là cụm đặc trưng nhiều từ — 1 lần khớp confidence
+# cao ĐÃ LÀ bằng chứng đủ mạnh, không nên bắt lặp lại như dãy số trần.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+  min_confidence_bypass: 0.90
 
 keywords:
   primary:

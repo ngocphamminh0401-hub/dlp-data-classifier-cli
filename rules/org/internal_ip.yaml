@@ -73,3 +73,37 @@ escalation:
     - "rdp"
     - "telnet"
   escalate_to: CONFIDENTIAL
+
+# IP nội bộ (192.168.x.x, 10.x.x.x...) là ví dụ minh họa cực phổ biến trong
+# tài liệu hướng dẫn kỹ thuật công khai, giáo trình mạng máy tính, blog kỹ
+# thuật — không phải lúc nào cũng phản ánh hạ tầng thật của tổ chức.
+# keywords.secondary (database, server, host) quá phổ biến trong bất kỳ tài
+# liệu kỹ thuật nào để tự nó là bằng chứng đủ mạnh.
+#
+# min_confidence_bypass=0.90: PHÒNG regression đã gặp với watermark_001 (xem
+# rules/org/watermark.yaml) — 1 IP thật kèm ngữ cảnh mạnh (VD "Server
+# database production: 10.20.30.40, firewall..." → conf 0.96 nhờ boost từ
+# nhiều keyword gần) vẫn là match đơn lẻ, không lặp lại, không có rule khác
+# hỗ trợ → nếu không có bypass sẽ bị hạ PUBLIC sai dù rõ ràng là hạ tầng
+# thật. Xác nhận qua test trực tiếp trước khi thêm field này. Không xung đột
+# với negation_filter bên dưới: match bị negation ép xuống fallback đã nằm ở
+# mức sàn, applyLevelGate (dùng MinConfidenceBypass) chỉ HẠ chứ không nâng
+# nên không "cứu" nhầm match đã bị negation loại.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+  min_confidence_bypass: 0.90
+
+# Nếu chunk có ngữ cảnh "ví dụ/minh họa" gần IP → đây là tài liệu hướng dẫn,
+# không phải cấu hình hạ tầng thật → hạ ngay về fallback_level (PUBLIC) của
+# level_gate, bất kể corroboration khác.
+negation_filter:
+  window_chars: 60
+  trigger_words:
+    - "ví dụ"
+    - "example"
+    - "vd:"
+    - "sample"
+    - "demo"
+    - "hướng dẫn cấu hình mẫu"
+  action: downgrade_to_gate

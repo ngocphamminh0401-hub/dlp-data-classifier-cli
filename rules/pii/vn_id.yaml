@@ -13,7 +13,7 @@ category: pii
 level: CONFIDENTIAL
 weight: 0.90
 priority: 80
-tags: [pii, identity, pii_vn_id, vn_specific]
+tags: [pii, identity, pii_vn_id, vn_specific, personal_identifier, pii_strong]
 enabled: true
 
 patterns:
@@ -72,6 +72,15 @@ false_positive_reduction:
   min_context_window: 200
   exclude_if_no_keywords: true
 
+# proximity_window: siết thêm ngoài min_context_window (200 byte, không cần
+# cùng câu) — cụm "số CCCD:", "CMND số" thường đứng NGAY SÁT số, nên chỉ chấp
+# nhận keyword trong 60 byte VÀ cùng câu. Fallback về window cũ nếu không xác
+# định được ranh giới câu (bảng/danh sách không dấu câu chuẩn).
+proximity_window:
+  max_chars: 60
+  same_sentence_required: true
+  keyword_scope: primary
+
 # Theo tài liệu "Bộ rule kết hợp Regex" (Bước 5): PII_DIRECT (CCCD) kết hợp
 # FIN_ACCOUNT (tài khoản/ngân hàng) hay các trường PII cơ bản khác (ngày
 # sinh/họ tên/địa chỉ) CHỈ dừng ở CONFIDENTIAL, không tự động SECRET — đây
@@ -106,3 +115,21 @@ volume_escalation:
   thresholds:
     - min_count: 50
       escalate_to: SECRET
+
+# pattern_1 (CCCD 12 số) và pattern_2 (CMND 9 số) là dãy số trần — dễ trùng mã
+# đơn hàng, số serial, số hóa đơn... dù đã có exclude_if_no_keywords/context_
+# required. pattern_3 (MRZ, prefix "VNM" cố định + checksum cấu trúc) đặc
+# trưng cao, giữ CONFIDENTIAL thẳng không cần gate.
+#
+# min_confidence_bypass=0.90: pattern_1 đã qua validator (vn_cccd_prefix) nên
+# phần lớn trường hợp TỰ ĐỘNG corroborate qua Validated=true (điều kiện #1)
+# — bypass ở đây chủ yếu bảo vệ pattern_2 (CMND, KHÔNG có validator) khi có
+# label/ngữ cảnh rất mạnh nhưng chỉ xuất hiện 1 lần, tránh regression cùng
+# loại đã xác nhận ở bank_account_001 (match đúng định dạng + label rõ ràng
+# vẫn bị hạ sai vì thiếu corroboration).
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
+  applies_to_patterns: [pattern_1, pattern_2]
+  exempt_patterns: [pattern_3]
+  min_confidence_bypass: 0.90

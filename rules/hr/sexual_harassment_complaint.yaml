@@ -29,8 +29,9 @@
 #    cần viết compound_rules dùng chung sau này.
 # 3) ĐÃ XÓA false_positive_reduction.exclude_patterns: field này KHÔNG có
 #    trong struct FPReduction (internal/engine/rules.go — chỉ có
-#    min_context_window, exclude_if_no_keywords, luhn_required,
-#    cvv_expiry_boost) — field lạ bị parser bỏ qua ÂM THẦM chứ không lỗi,
+#    min_context_window, exclude_if_no_keywords, cvv_expiry_boost —
+#    luhn_required đã bị xóa khỏi struct, dead field chưa từng được đọc) —
+#    field lạ bị parser bỏ qua ÂM THẦM chứ không lỗi,
 #    nên giữ lại sẽ gây ảo tưởng có bảo vệ trong khi thực tế không có tác
 #    dụng gì. Rủi ro thấp vì level_gate (require_corroboration) đã đóng vai
 #    trò lọc chính; văn bản chính sách/đào tạo chung không có mã vụ việc cụ

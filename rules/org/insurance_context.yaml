@@ -99,3 +99,34 @@ keywords:
 false_positive_reduction:
   min_context_window: 100
   exclude_if_no_keywords: true
+
+# PHÁT HIỆN QUA PHÂN TÍCH DỮ LIỆU THẬT: dù đã gỡ pattern "bồi thường" bare
+# (xem comment ở trên), rule này vẫn là nguồn over-classify PUBLIC lớn NHẤT
+# toàn bộ ruleset — 1806/~3200 file-variant PUBLIC domain insurance bị đẩy
+# sai lên CONFIDENTIAL (đối chiếu qua tool phân tích rule "thủ phạm" trên
+# rawdata/). Nguyên nhân gốc: rule này TỰ NHẬN "chỉ dùng làm tag phụ trợ cho
+# compound rule" (xem comment đầu file), KHÔNG có ý nghĩa đứng một mình —
+# nhưng vì kiến trúc highest-sensitivity-wins, 1 match vẫn tự set FinalLevel
+# =CONFIDENTIAL cho cả file bất kể compound có kích hoạt hay không. Các cụm
+# còn lại ("bồi thường bảo hiểm", "hồ sơ yêu cầu bồi thường", "thẩm định bảo
+# hiểm"...) đều là ngôn ngữ ĐIỀU KHOẢN/QUY TẮC BẢO HIỂM CÔNG KHAI — loại tài
+# liệu PUBLIC phổ biến nhất trong domain bảo hiểm.
+#
+# required_corroboration_tags: [health] — AN TOÀN TUYỆT ĐỐI với vai trò
+# "tag phụ trợ": compound rule "Health + Insurance Context = SECRET" (xem
+# rules.yaml) đã BẮT BUỘC pii_health làm 1 điều kiện riêng — nên khi compound
+# đó thật sự kích hoạt (có health_001 match), gate này CŨNG tự thỏa (cùng
+# đòi hỏi health_001 có mặt), không mất case thật nào. Chỉ chặn đúng trường
+# hợp insurance_context_001 đứng MỘT MÌNH (không có dữ liệu y tế đi kèm) —
+# chính là dấu hiệu "tài liệu điều khoản chung", không phải hồ sơ claim thật.
+level_gate:
+  require_corroboration: true
+  fallback_level: PUBLIC
+  required_corroboration_tags: [health]
+  # strict_tags_only=true BẮT BUỘC: xác nhận qua test trực tiếp rằng nếu
+  # không loại bỏ, điều kiện "counts>=2" (lặp lại) vẫn là 1 nhánh OR độc lập
+  # — mà văn bản điều khoản/quy tắc bảo hiểm PUBLIC bình thường RẤT dễ đạt
+  # ≥2 (VD "Hồ sơ yêu cầu bồi thường" + "yêu cầu bồi thường" khớp CÙNG 1 cụm
+  # từ qua 2 pattern khác nhau) — vô hiệu hóa hoàn toàn ý nghĩa của
+  # required_corroboration_tags nếu không strict.
+  strict_tags_only: true

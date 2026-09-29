@@ -1,15 +1,42 @@
 # DLP Classifier
 
-Công cụ CLI phân loại dữ liệu nhạy cảm (Data Loss Prevention) hiệu năng cao, viết bằng Go. Phát hiện PII, thông tin tài chính và dữ liệu nội bộ tổ chức theo khung 4 cấp độ bảo mật của VNPT.
+Công cụ CLI phân loại dữ liệu nhạy cảm (Data Loss Prevention) hiệu năng cao, viết bằng Go. Phát hiện PII, thông tin tài chính và dữ liệu nội bộ tổ chức theo khung 4 cấp độ bảo mật: PUBLIC → INTERNAL → CONFIDENTIAL → RESTRICTED.
+
+## Kiến trúc 2 lớp
+
+```
+                    ┌───────────────────────────────┐
+   File input  ───► │  Lớp 1 — Regexing (engine Go)   │
+                     │  Aho-Corasick prefilter + RE2   │
+                     │  → FileConfidence (conf_regex)  │
+                     └───────────┬────────────────────┘
+                                 │
+                    conf_regex ≥ T1 ──────► giữ nhãn engine (đa số file)
+                                 │
+                    conf_regex < T1
+                                 ▼
+                     ┌───────────────────────────────┐
+                     │  Lớp 2 — LLM offline (phi4-mini) │
+                     │  escalate-only + guardrail:      │
+                     │  cap +1 bậc, matched_rule gate,  │
+                     │  need_review → human review      │
+                     └───────────┬────────────────────┘
+                                 ▼
+                          Nhãn cuối cùng
+```
+
+Lớp 1 tự quyết cho phần lớn file (engine tự tin, `conf_regex ≥ 0,95`). Phần còn lại (engine không chắc) được phi4-mini xem lại **chỉ để nâng mức** (không bao giờ hạ), qua một lớp guardrail chặn các trường hợp LLM nâng nhầm lên RESTRICTED thiếu bằng chứng. Chi tiết thiết kế và số liệu đánh giá nằm trong `tailieu/` (xem mục [Tài liệu & quá trình phát triển](#tài-liệu--quá-trình-phát-triển)).
+
+`internal/agent/` đã có sẵn agent server (Unix socket + gRPC, cache engine đã compile, dispatch scan_file/scan_directory/reload_rules) nhưng **chưa được nối vào CLI** và **chưa chạy như Windows Service** — hiện tại chỉ dùng được qua CLI đồng bộ (`dlp scan`).
 
 ## Tính năng
 
 - **Phân loại 4 cấp:** PUBLIC → INTERNAL → CONFIDENTIAL → RESTRICTED
-- **25 rules** phủ PII, tài chính, thông tin tổ chức — cấu hình hoàn toàn bằng YAML
-- **14 compound rules** nâng cấp độ khi phát hiện tổ hợp nguy hiểm (VD: PII + tài chính → RESTRICTED)
+- **53 rule** phủ PII, tài chính, HR, thông tin tổ chức — cấu hình hoàn toàn bằng YAML (`rules/pii`, `rules/financial`, `rules/hr`, `rules/org`)
+- **17 compound rules** nâng cấp độ khi phát hiện tổ hợp nguy hiểm (VD: PII + tài chính → RESTRICTED)
+- **Lớp LLM offline (phi4-mini qua Ollama)** xem lại các file engine không chắc, escalate-only + guardrail (xem kiến trúc ở trên)
 - **Xử lý song song** với worker pool (mặc định: số CPU − 1, tối đa 8)
 - **Hỗ trợ 20+ định dạng file:** `.txt`, `.pdf`, `.docx`, `.xlsx`, `.csv`, `.json`, `.html`, `.eml`, `.yaml`, `.log`, `.env`, `.go`, `.java`, `.js`, `.ts`, v.v.
-- **Throughput ~15.000 file/s** trên dataset 17.000 file
 - **Validators tích hợp:** Luhn (thẻ tín dụng), mã tỉnh CCCD, prefix ngân hàng VN
 - **Shannon entropy** phát hiện private key và dữ liệu mã hóa
 - **Audit log** JSONL cho compliance
@@ -17,12 +44,13 @@ Công cụ CLI phân loại dữ liệu nhạy cảm (Data Loss Prevention) hi�
 ## Yêu cầu
 
 - Go 1.21+
+- (Tùy chọn, cho Lớp 2) [Ollama](https://ollama.com) chạy local với model `phi4-mini` nếu muốn dùng pipeline có LLM offline
 
 ## Cài đặt
 
 ```bash
-git clone https://github.com/vnpt/dlp-classifier
-cd dlp-classifier
+git clone https://github.com/ngocphamminh0401-hub/dlp-data-classifier-cli.git
+cd dlp-data-classifier-cli
 go build -o dlp.exe ./cmd/dlp
 ```
 
@@ -76,45 +104,25 @@ go build -o dlp.exe ./cmd/dlp
 
 ## Đánh giá độ chính xác
 
-### Chuẩn bị dataset
+Việc đánh giá hiện dùng bộ script `scripts/pha2_collect.go` (quét toàn corpus, xuất feature) +
+`scripts/pha2_split.go` (chia train/validation/holdout 70/15/15) + các notebook Python trong
+`scripts/notebooks/` (fit FileConfidence, đánh giá pipeline). Toàn bộ quá trình và quyết định
+kỹ thuật được ghi lại theo từng "Pha" trong `tailieu/`.
 
-Tổ chức file test theo cấu trúc thư mục với tên nhãn:
+### Kết quả mới nhất (holdout 3.781 file, ground-truth từ tên thư mục dataset synthetic)
 
-```
-dataset/
-├── L1/             # hoặc L1_PUBLIC
-├── L2/             # hoặc L2_INTERNAL
-├── L3/             # hoặc L3_CONFIDENTIAL
-├── L4/             # hoặc L4_RESTRICTED
-└── edge/           # edge cases — không tính điểm
-```
+| | accuracy | over-classification | under-classification (rò rỉ) |
+|---|---|---|---|
+| Engine đứng một mình (chỉ Lớp 1, không có LLM) | 84,7% | 8,9% | 6,4% |
+| **Pipeline sản xuất (Lớp 1 + Lớp 2 LLM + guardrail)** | **80,4%** | **15,7%** | **3,9%** |
 
-### Chạy đánh giá
+Pipeline đánh đổi ~4 điểm accuracy và tăng over-classification để giảm rò rỉ (under) từ 6,4%
+xuống 3,9% — coi là đánh đổi hợp lý cho bài toán DLP (hậu quả rò rỉ nghiêm trọng hơn gắn nhầm mức
+cao). Chi tiết đầy đủ theo từng lớp, breakdown theo mức phân loại, và các phương án đã thử nhưng
+KHÔNG dùng (kèm lý do) nằm trong `tailieu/pha15-guardrail-lop2.md` và `tailieu/pha20-cong-thuc-tin-cay-lop-llm.md`.
 
-```bash
-# Báo cáo đầy đủ (accuracy, F1, confusion matrix)
-go run scripts/eval_dataset.go --dataset "D:/testdlp/dlp_testdata"
-
-# Chỉ xem file phân loại sai
-go run scripts/eval_dataset.go --dataset "D:/testdlp/dlp_testdata" --wrong-only
-
-# Bao gồm edge cases
-go run scripts/eval_dataset.go --dataset "D:/testdlp/dlp_testdata" --edge
-
-# Xuất kết quả chi tiết ra CSV
-go run scripts/eval_dataset.go --dataset "D:/testdlp/dlp_testdata" --out-csv results.csv
-```
-
-### Kết quả hiện tại (17.000 file)
-
-| Class | Samples | Precision | Recall | F1 |
-|---|---|---|---|---|
-| PUBLIC | 2.250 | 79.0% | 91.6% | 84.8% |
-| INTERNAL | 4.400 | 42.5% | 63.7% | 51.0% |
-| CONFIDENTIAL | 6.100 | 62.1% | 43.4% | 51.1% |
-| RESTRICTED | 4.250 | 100.0% | 83.2% | 90.8% |
-
-**Accuracy: 64.96% — Macro F1: 69.42% — Throughput: ~15.000 files/s**
+⚠️ Corpus đánh giá hiện là **100% dữ liệu synthetic** — con số tuyệt đối trên dữ liệu thật có thể
+khác (xem giới hạn ghi trong từng báo cáo Pha).
 
 ## Cấu trúc Rules
 
@@ -122,30 +130,39 @@ Rules được định nghĩa bằng YAML trong thư mục `rules/`:
 
 ```
 rules/
-├── pii/             # Thông tin cá nhân
+├── pii/             # Thông tin cá nhân (10 rule)
 │   ├── vn_id.yaml       # CCCD / CMND
+│   ├── vn_name.yaml     # Họ tên
 │   ├── passport.yaml    # Hộ chiếu
 │   ├── phone.yaml       # Số điện thoại
 │   ├── email.yaml       # Email
 │   ├── dob.yaml         # Ngày sinh
 │   ├── health.yaml      # Dữ liệu y tế
 │   ├── social_insurance.yaml
-│   └── biometric.yaml   # Sinh trắc học
-├── financial/       # Thông tin tài chính
+│   ├── biometric.yaml   # Sinh trắc học
+│   ├── ethnicity_religion_political.yaml
+│   └── location_tracking.yaml
+├── financial/       # Thông tin tài chính (20 rule)
 │   ├── credit_card.yaml # Thẻ tín dụng (Luhn validator)
 │   ├── cvv.yaml
 │   ├── bank_account.yaml
 │   ├── iban.yaml
 │   ├── swift_bic.yaml
 │   ├── tax_code.yaml
-│   └── income.yaml
-├── org/             # Thông tin tổ chức
+│   ├── otp_auth.yaml
+│   └── ...
+├── hr/              # Nhân sự (7 rule)
+│   ├── offer_letter.yaml
+│   ├── disciplinary_health_investigation.yaml
+│   ├── sexual_harassment_complaint.yaml
+│   └── ...
+├── org/             # Thông tin tổ chức (14 rule)
 │   ├── credentials.yaml # API key, password, token
 │   ├── classified_doc.yaml
 │   ├── contract.yaml
 │   ├── internal_ip.yaml
 │   └── ...
-└── rules.yaml       # Compound rules
+└── rules.yaml       # Compound rules (17 tổ hợp)
 ```
 
 ### Cấu trúc một rule
@@ -186,7 +203,7 @@ compound_rules:
     alert_priority: CRITICAL
 ```
 
-## Kiến trúc
+## Kiến trúc Lớp 1 (Regexing engine)
 
 ```
 Input file
@@ -202,6 +219,8 @@ Input file
     ▼ Shannon entropy check            phát hiện key mã hóa, private key
     │
     ▼ Compound rules                   nâng cấp theo tổ hợp nguy hiểm
+    │
+    ▼ FileConfidence                   điểm tin cậy — quyết định có cần Lớp 2 không
     │
     ▼ Kết quả phân loại
 ```
@@ -253,3 +272,14 @@ Summary
 path,status,level,rule_id,offset,length,confidence,error
 D:/data/hop_dong.pdf,OK,CONFIDENTIAL,contract_001,1024,12,0.8200,
 ```
+
+## Tài liệu & quá trình phát triển
+
+Toàn bộ quyết định kỹ thuật (công thức FileConfidence, ngưỡng routing, guardrail LLM, các
+phương án đã thử nhưng bị loại kèm lý do) được ghi lại tuần tự theo từng "Pha" trong `tailieu/`.
+Đáng chú ý:
+
+- `tailieu/cong-thuc-tinh-diem-file-confidence.md` — công thức FileConfidence (Lớp 1) hiện dùng.
+- `tailieu/pha15-guardrail-lop2.md` — guardrail Lớp 2 đang chạy production (Policy C).
+- `tailieu/pha20-cong-thuc-tin-cay-lop-llm.md` — thử nghiệm công thức tin cậy riêng cho nhãn LLM
+  (`conf_llm`), kèm lý do vì sao chưa đưa vào production.

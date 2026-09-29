@@ -19,17 +19,30 @@ patterns:
     context_required: false
 
 keywords:
+  # Chỉ giữ trong primary các cụm ĐẶC TRƯNG hợp đồng thật (2+ từ, gắn với
+  # định dạng tài liệu hợp đồng cụ thể) — bỏ "hợp đồng"/"contract"/"agreement"/
+  # "thỏa thuận" đứng trần vì đây là từ QUÁ PHỔ BIẾN (mã đơn hàng thương mại
+  # điện tử, email marketing "PO-123456"... đều dễ có các từ này lân cận mà
+  # không phải hợp đồng thật). LƯU Ý: primary/secondary chỉ ảnh hưởng ĐỘ LỚN
+  # context boost (Zone Primary > Secondary trong distanceWeightedBoost),
+  # KHÔNG có tác dụng "bắt buộc" gì (keyword_logic.min_primary là dead field
+  # — engine chỉ đọc min_secondary, xem comment ở business_internal.yaml) —
+  # rào chắn thật cho pattern chung chung này nằm ở level_gate bên dưới.
   primary:
-    - "hợp đồng"
-    - "contract"
-    - "agreement"
-    - "thỏa thuận"
+    - "hợp đồng số"
+    - "số hợp đồng"
+    - "contract no"
+    - "mã hợp đồng"
     - "NDA"
     - "non-disclosure"
     - "thoả thuận bảo mật"
     - "hợp đồng dịch vụ"
     - "hợp đồng mua bán"
   secondary:
+    - "hợp đồng"
+    - "contract"
+    - "agreement"
+    - "thỏa thuận"
     - "bảo mật"
     - "confidential"
     - "cam kết"
@@ -55,11 +68,26 @@ keywords:
     - "báo giá"
     - "quotation"
 
-keyword_logic:
-  min_primary: 1
-  min_secondary: 0
-  confidence_per_keyword: 0.08
-  max_confidence: 0.92
+# keyword_logic (min_primary/confidence_per_keyword/max_confidence): ĐÃ XÓA
+# — dead field, chưa từng được engine đọc (xem internal/engine/rules.go
+# KeywordLogic). min_secondary vốn = 0 (không active, MinSecondary>0 mới
+# gate) nên xóa cả block không đổi hành vi.
+
+# Trước đây pattern KHÔNG yêu cầu keyword nào (context_required=false, không
+# có false_positive_reduction) — mã "PO-123456"/"HD-2024001" tự nó đủ để
+# match, kể cả trong mã đơn hàng thương mại điện tử/email marketing hoàn
+# toàn không liên quan hợp đồng. exclude_if_no_keywords bắt buộc phải có ÍT
+# NHẤT 1 keyword (primary hoặc secondary) ở ĐÂU ĐÓ trong chunk.
+false_positive_reduction:
+  min_context_window: 100
+  exclude_if_no_keywords: true
+
+# Mã hợp đồng/PO là định dạng CHUNG (dễ trùng số hóa đơn, mã đơn hàng công
+# khai) — 1 lần khớp đơn lẻ, không lặp lại, không có rule khác hỗ trợ không
+# nên tự động CONFIDENTIAL.
+level_gate:
+  require_corroboration: true
+  fallback_level: INTERNAL
 
 escalation:
   keywords:

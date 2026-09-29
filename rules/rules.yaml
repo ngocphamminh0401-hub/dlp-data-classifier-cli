@@ -196,8 +196,21 @@ compound_rules:
   # [Hợp đồng + PII] — dùng org_contract (không phải org) để tránh:
   #   watermark(INTERNAL) + email(INTERNAL) → CONFIDENTIAL (sai)
   # org_contract: tag từ category("org") + prefix("contract_001" → "contract")
+  #
+  # Dùng "pii_strong" (không phải "pii" chung): tag "pii" category dùng
+  # chung cho toàn bộ 11 rule nhóm pii, kể cả rule yếu nhất (vn_name_001
+  # confidence 0.70, dob_001 confidence 0.45-0.70, context_required=true cả
+  # 2). 1 hợp đồng MẪU (template) chỉ chứa 1 tên minh họa + 1 ngày ký hợp
+  # đồng (bị dob_001 bắt nhầm thành ngày sinh) → tự động CONFIDENTIAL dù
+  # không có PII thật nào. pii_strong (xem compoundCustomTags trong
+  # classifier.go — allowlist tag tùy chỉnh được dùng cho compound rule) chỉ
+  # gồm 5 rule PII "mạnh": vn_id_001, passport_001, social_insurance_001,
+  # health_001, biometric_001 — đều có validator/format đặc trưng cao hoặc
+  # override_level SECRET riêng, không phụ thuộc corroboration bên ngoài để
+  # đáng tin. pii (rộng) vẫn giữ nguyên cho category/thống kê thông thường,
+  # không dùng để trigger compound rule nào khác trừ khi audit riêng.
   - name: "Contract + PII = CONFIDENTIAL"
-    conditions: [org_contract, pii]
+    conditions: [org_contract, pii_strong]
     result_level: CONFIDENTIAL
 
   # ── PCI-DSS ───────────────────────────────────────────────────────────────
@@ -205,8 +218,20 @@ compound_rules:
   # [Credit card + CVV] → PCI-DSS Req.3.3.1 — CVV không được lưu trữ
   # violation_type để trigger compliance workflow (cả 2 đã là SECRET, rule này
   # không nâng level mà chỉ ghi nhận vi phạm PCI cụ thể)
+  #
+  # Dùng "credit_card_001" (RuleID chính xác) thay vì tag "credit_card": sau
+  # khi kích hoạt addRuleTagsToSet (xem classifier.go), tag "credit_card"
+  # (chung, tự suy qua category_prefix) SẼ bị fin_credit_card_statement_001
+  # (sao kê — CHỈ MỨC CONFIDENTIAL, không phải PAN thật) vô tình thỏa mãn vì
+  # rule đó cũng tự khai tags:[..., credit_card, ...] cho mục đích thống kê —
+  # dẫn đến ghi nhận SAI vi phạm PCI-DSS CRITICAL chỉ từ 1 câu "sao kê thẻ
+  # tín dụng" + 1 lần nhắc CVV, không có cặp PAN+CVV thật nào. RuleID chính
+  # xác chỉ khớp match TỪ ĐÚNG credit_card_001 (rule bắt số PAN thật, có
+  # Luhn validator) — nhất quán với cách các compound rule khác trong file
+  # này đã dùng RuleID chính xác khi cần độ chính xác cao (VD dòng dưới:
+  # "classified_doc_001"/"classified_doc_002").
   - name: "Credit card + CVV = SECRET (PCI-DSS Req.3.3.1)"
-    conditions: [credit_card, cvv]
+    conditions: [credit_card_001, cvv]
     result_level: SECRET
     violation_type: PCI_DSS_3.3.1
     alert_priority: CRITICAL
@@ -220,8 +245,19 @@ compound_rules:
 
   # [Hợp đồng + Financial] — dùng org_contract để tránh watermark + credit_card
   # Engine no-downgrade đảm bảo: nếu credit_card(SECRET) đã match, CONFIDENTIAL bị bỏ qua
+  #
+  # Dùng "financial_personal" (không phải "financial" chung): tag financial
+  # category dùng chung cho toàn bộ 21 rule nhóm financial, gồm cả rule
+  # INTERNAL yếu (fin_internal_branch_financials_001 weight 0.45 — chỉ trao
+  # đổi nội bộ số liệu tổng hợp chi nhánh, không gắn cá nhân/khách hàng nào)
+  # lẫn rule SECRET mạnh (credit_card_001 weight 0.95). financial_personal
+  # (allowlist tag tùy chỉnh — xem compoundCustomTags trong classifier.go)
+  # chỉ gồm 8 rule gắn với 1 cá nhân/khách hàng cụ thể: bank_account_001,
+  # credit_card_001, iban_001, income_001, tax_code_personal_001,
+  # fin_account_statement_001, fin_credit_card_statement_001,
+  # fin_transfer_confirmation_001.
   - name: "Contract + Financial = CONFIDENTIAL"
-    conditions: [org_contract, financial]
+    conditions: [org_contract, financial_personal]
     result_level: CONFIDENTIAL
 
   # ── VNPT CLASSIFIED DOCS (TÁCH THEO LEVEL) ───────────────────────────────
@@ -251,8 +287,13 @@ compound_rules:
 
   # [SĐT + Tài chính] → CONFIDENTIAL (NĐ 13/2023: SĐT là dữ liệu cơ bản)
   # No-downgrade: nếu financial đã là SECRET từ credit_card, rule này bị bỏ qua
+  #
+  # Dùng "financial_personal" (xem giải thích chi tiết ở compound "Contract +
+  # Financial" phía trên) — tránh 1 tin nhắn nội bộ chỉ có SĐT nhân viên +
+  # "số liệu kinh doanh chi nhánh chưa kiểm toán" (fin_internal_branch_
+  # financials_001, tự thân chỉ INTERNAL) bị đẩy sai lên CONFIDENTIAL.
   - name: "Phone + Financial = CONFIDENTIAL"
-    conditions: [pii_phone, financial]
+    conditions: [pii_phone, financial_personal]
     result_level: CONFIDENTIAL
 
   # ĐÃ GỠ (không có căn cứ trong tài liệu, gây over-classify — xem ghi chú
@@ -273,8 +314,13 @@ compound_rules:
   # [Location Tracking + Financial] → Bước 2: finance_banking domain-specific
   # combo (FIN_ACCOUNT + LOCATION_TRACKING). min_component_level: CONFIDENTIAL
   # trên cả 2 điều kiện — chỉ nổ khi cả 2 match đều đạt CONFIDENTIAL thật.
+  # Dùng "financial_personal" thay "financial" chung (xem giải thích ở
+  # compound "Contract + Financial" đầu file) — dù min_component_level đã
+  # lọc bớt (rule INTERNAL yếu khó tự đạt CONFIDENTIAL), vẫn siết thêm để
+  # nhất quán và phòng trường hợp rule INTERNAL yếu được escalate/gate lên
+  # CONFIDENTIAL qua cơ chế khác (volume_escalation, escalation keywords...).
   - name: "Location Tracking + Financial = SECRET"
-    conditions: [pii_location_tracking, financial]
+    conditions: [pii_location_tracking, financial_personal]
     min_component_level: CONFIDENTIAL
     result_level: SECRET
 
@@ -343,14 +389,33 @@ compound_rules:
     min_component_level: CONFIDENTIAL
     result_level: SECRET
 
+  # Dùng "financial_personal" thay "financial" chung — xem giải thích ở
+  # compound "Contract + Financial" đầu file.
   - name: "Ethnicity/Religion + Financial = SECRET"
-    conditions: [pii_ethnicity_religion_political, financial]
+    conditions: [pii_ethnicity_religion_political, financial_personal]
     min_component_level: CONFIDENTIAL
     result_level: SECRET
 
+  # THỬ NGHIỆM MỚI (chưa có trong lịch sử ở trên): negative-signal theo domain
+  # y tế thay vì positive-signal theo domain HR (đã thử context_conditions:[hr]
+  # và thất bại — xem lịch sử phía trên). Chỉ áp riêng cho compound NÀY (không
+  # phải cả nhóm C10-C13) vì đây là compound duy nhất trong nhóm có domain y tế
+  # trùng lặp trực tiếp với nguồn gây FP (health_001) — C10-C13 (Identity/
+  # Passport/Social Insurance/Financial) ít liên quan trực tiếp mẫu bệnh án nên
+  # giữ nguyên, giảm phạm vi thử nghiệm để giảm rủi ro hồi quy trên hr.
+  #
+  # 3 cụm dưới đây là tín hiệu khám bệnh THƯỜNG QUY (thu thập nhân khẩu học
+  # chuẩn trong mẫu bệnh án VN, không phải dấu hiệu bất thường). "BHYT (không
+  # đi kèm số tiền lương)" CHƯA đưa vào: RE2 không hỗ trợ lookaround nên không
+  # diễn đạt được "có X mà không có Y" thuần regex — bỏ qua để tránh rủi ro
+  # loại trừ nhầm hồ sơ nhân sự có BHYT+lương thật (ưu tiên an toàn hơn độ phủ).
   - name: "Ethnicity/Religion + Health = SECRET"
     conditions: [pii_ethnicity_religion_political, pii_health]
     min_component_level: CONFIDENTIAL
+    exclude_context_patterns:
+      - '(?i)khám\s*lâm\s*sàng'
+      - '(?i)phiếu\s*khám\s*sức\s*khỏe'
+      - '(?i)hồ\s*sơ\s*bệnh\s*án'
     result_level: SECRET
 
   # T5 — Tổ hợp 3 PII cơ bản: re-identification risk (GDPR Recital 26, NIST SP 800-188)
